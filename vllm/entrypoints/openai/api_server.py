@@ -132,6 +132,10 @@ async def check_length(
 
     if request.max_tokens is None:
         request.max_tokens = max_model_len - token_num
+    # hack for llama2
+    if token_num + request.max_tokens > max_model_len:
+        request.max_tokens = max(max_model_len - token_num, 1)
+
     if token_num + request.max_tokens > max_model_len:
         return input_ids, create_error_response(
             HTTPStatus.BAD_REQUEST,
@@ -179,6 +183,73 @@ def create_logprobs(token_ids: List[int],
         })
     return logprobs
 
+# Get next printable text suitable for streaming.
+# Adapted from https://github.com/huggingface/transformers/blob/main/src/transformers/generation/streamers.py
+# TODO 根据当前token判断截止到上一个token是否可以打印
+def is_next_printable_text(text: str, max_cjk_length = 20) -> str:
+    n = len(text)
+    if n == 0:
+        return False
+    last = text[-1]
+    if last in ['\n', ' ', '　',
+            '的', '地', '得', '着', '了', '和','及', '与','或', '是', '们',
+            '，', '、', '；', '！', '？', ',', ';', '!', '?']:
+        return True
+    # don't make the last token too long
+    if _is_chinese_char(ord(text[-1])) and n < max_cjk_length:
+        return False
+    return last.isascii()
+
+# Adapted from https://github.com/huggingface/transformers/blob/main/src/transformers/generation/streamers.py
+def _is_chinese_char(cp):
+    """Checks whether CP is the codepoint of a CJK character."""
+    # This defines a "chinese character" as anything in the CJK Unicode block:
+    #   https://en.wikipedia.org/wiki/CJK_Unified_Ideographs_(Unicode_block)
+    #
+    # Note that the CJK Unicode block is NOT all Japanese and Korean characters,
+    # despite its name. The modern Korean Hangul alphabet is a different block,
+    # as is Japanese Hiragana and Katakana. Those alphabets are used to write
+    # space-separated words, so they are not treated specially and handled
+    # like the all of the other languages.
+    if (
+        (cp >= 0x4E00 and cp <= 0x9FFF)
+        or (cp >= 0x3400 and cp <= 0x4DBF)  #
+        or (cp >= 0x20000 and cp <= 0x2A6DF)  #
+        or (cp >= 0x2A700 and cp <= 0x2B73F)  #
+        or (cp >= 0x2B740 and cp <= 0x2B81F)  #
+        or (cp >= 0x2B820 and cp <= 0x2CEAF)  #
+        or (cp >= 0xF900 and cp <= 0xFAFF)
+        or (cp >= 0x2F800 and cp <= 0x2FA1F)  #
+    ):  #
+        return True
+
+    return False
+
+def test_get_next_printable_text_from_english_string():
+    assert is_next_printable_text('Once upon a') == False
+    assert is_next_printable_text('Once upon a ')
+    assert is_next_printable_text('time') == False
+    assert is_next_printable_text('time,')
+    assert is_next_printable_text('dwarfs.') == False
+    assert is_next_printable_text('dwarfs.\n')
+
+def test_get_next_printable_text_from_chinese_string():
+    assert is_next_printable_text('从前') == False
+    assert is_next_printable_text('从前，')
+    assert is_next_printable_text('从前,')
+    assert is_next_printable_text('从前 ')
+    assert is_next_printable_text('从前　')
+    assert is_next_printable_text('在香港') == False
+    assert is_next_printable_text('在香港的')
+    assert is_next_printable_text('小矮人') == False
+    assert is_next_printable_text('小矮人们')
+    assert is_next_printable_text('小矮人与')
+    assert is_next_printable_text('白雪公主邀请小矮人') == False
+    assert is_next_printable_text('白雪公主邀请小矮人', 5)
+
+def is_qwen(model_name: str):
+    lower_name = model_name.lower()
+    return 'qwen' in lower_name or 'lime' in lower_name
 
 @app.post("/v1/chat/completions")
 async def create_chat_completion(request: ChatCompletionRequest,
@@ -212,13 +283,18 @@ async def create_chat_completion(request: ChatCompletionRequest,
     request_id = f"cmpl-{random_uuid()}"
     created_time = int(time.monotonic())
     try:
+        # hack for qwen
+        stop = request.stop
+        stop = [] if stop is None else stop if isinstance(stop, list) else [stop]
+        if is_qwen(model_name):
+            stop = list(set(stop + ["<|endoftext|>", "<|im_end|>"]))
         sampling_params = SamplingParams(
             n=request.n,
             presence_penalty=request.presence_penalty,
             frequency_penalty=request.frequency_penalty,
-            temperature=request.temperature,
+            temperature=request.temperature if request.temperature else 0.01,
             top_p=request.top_p,
-            stop=request.stop,
+            stop=stop,
             stop_token_ids=request.stop_token_ids,
             max_tokens=request.max_tokens,
             best_of=request.best_of,
@@ -268,26 +344,20 @@ async def create_chat_completion(request: ChatCompletionRequest,
             yield f"data: {data}\n\n"
 
         previous_texts = [""] * request.n
-        previous_num_tokens = [0] * request.n
         async for res in result_generator:
             res: RequestOutput
             for output in res.outputs:
                 i = output.index
                 delta_text = output.text[len(previous_texts[i]):]
+                if not is_next_printable_text(delta_text) and not output.finish_reason:
+                    continue
                 previous_texts[i] = output.text
-                previous_num_tokens[i] = len(output.token_ids)
                 response_json = create_stream_response_json(
                     index=i,
                     text=delta_text,
+                    finish_reason=output.finish_reason,
                 )
                 yield f"data: {response_json}\n\n"
-                if output.finish_reason is not None:
-                    response_json = create_stream_response_json(
-                        index=i,
-                        text="",
-                        finish_reason=output.finish_reason,
-                    )
-                    yield f"data: {response_json}\n\n"
         yield "data: [DONE]\n\n"
 
     # Streaming response
@@ -404,6 +474,14 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
     else:
         prompt = request.prompt
 
+    # hack for qwen
+    stop = request.stop
+    stop = [] if stop is None else stop if isinstance(stop, list) else [stop]
+    if is_qwen(model_name):
+        stop = list(set(stop + ["<|endoftext|>", "<|im_end|>"]))
+        if not use_token_ids and '<|im_start|>' not in prompt:
+            prompt = f'<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n'
+
     if use_token_ids:
         _, error_check_ret = await check_length(request, prompt_ids=prompt)
     else:
@@ -418,10 +496,10 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
             best_of=request.best_of,
             presence_penalty=request.presence_penalty,
             frequency_penalty=request.frequency_penalty,
-            temperature=request.temperature,
+            temperature=request.temperature if request.temperature else 0.01,
             top_p=request.top_p,
             top_k=request.top_k,
-            stop=request.stop,
+            stop=stop,
             stop_token_ids=request.stop_token_ids,
             ignore_eos=request.ignore_eos,
             max_tokens=request.max_tokens,
@@ -477,6 +555,8 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
             for output in res.outputs:
                 i = output.index
                 delta_text = output.text[len(previous_texts[i]):]
+                if not is_next_printable_text(delta_text) and not output.finish_reason:
+                    continue
                 if request.logprobs is not None:
                     logprobs = create_logprobs(
                         output.token_ids[previous_num_tokens[i]:],
@@ -490,18 +570,9 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
                     index=i,
                     text=delta_text,
                     logprobs=logprobs,
+                    finish_reason=output.finish_reason,
                 )
                 yield f"data: {response_json}\n\n"
-                if output.finish_reason is not None:
-                    logprobs = (LogProbs()
-                                if request.logprobs is not None else None)
-                    response_json = create_stream_response_json(
-                        index=i,
-                        text="",
-                        logprobs=logprobs,
-                        finish_reason=output.finish_reason,
-                    )
-                    yield f"data: {response_json}\n\n"
         yield "data: [DONE]\n\n"
 
     # Streaming response
