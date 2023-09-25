@@ -15,7 +15,7 @@ from vllm.model_executor.layers.rotary_embedding import (
     DynamicNTKScalingRotaryEmbedding, LinearScalingRotaryEmbedding,
     RotaryEmbedding)
 
-_SUPPORTED_HEAD_SIZES = [64, 80, 96, 112, 128, 256]
+_SUPPORTED_HEAD_SIZES = [64, 80, 96, 112, 128, 160, 256]
 
 
 class PagedAttention(nn.Module):

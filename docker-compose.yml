@@ -1,0 +1,39 @@
+version: '3'
+services:
+  qwen:
+    image: yuanxulei/qwen:0.0.1
+    build: ./qwen
+    volumes:
+      # 模型等数据挂载目录，默认为当前项目的 data 目录
+      - ./data/qwen-14b-chat-int4:/usr/src/qwen-14b-chat-int4
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '6' ]
+              capabilities: [ gpu ]
+  vllm:
+    image: yuanxulei/vllm:0.1.0
+    # 用于通过 docker-compose build 构建本地测试镜像
+    build:
+      context: .
+    command: python -m vllm.entrypoints.openai.api_server --model qwen-14b-chat-int4 --trust-remote-code --host 0.0.0.0
+    # 对外暴露的端口号
+    ports:
+      - 8000:8000
+    volumes:
+      # 模型等数据挂载目录，默认为当前项目的 data 目录
+      - ./data/qwen-14b-chat-int4:/usr/src/qwen-14b-chat-int4
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: [ '6' ]
+              capabilities: [ gpu ]
+    logging:
+      driver: json-file
+      options:
+          max-size: "100m"
+          max-file: "5"
