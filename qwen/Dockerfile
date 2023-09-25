@@ -20,22 +20,12 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 # pip 国内加速
 RUN pip config set global.index-url https://mirrors.tencentyun.com/pypi/simple
 
-RUN pip uninstall torch -y --no-cache-dir
+#RUN pip uninstall torch -y --no-cache-dir
 
 # 其中qwen模型的依赖为 auto-gptq tiktoken transformers_stream_generator
-RUN pip install torch==2.0.1 fschat==0.2.29 auto-gptq tiktoken transformers_stream_generator --no-cache-dir
-
-RUN pip uninstall transformer-engine -y --no-cache-dir
+RUN pip install einops optimum auto-gptq tiktoken transformers_stream_generator --no-cache-dir
 
 WORKDIR /usr/src
 
-# build vllm
-COPY requirements.txt requirements.txt
-COPY csrc csrc
-COPY setup.py setup.py
-COPY pyproject.toml pyproject.toml
-COPY vllm vllm
-COPY README.md README.md
-RUN MAKEFLAGS="-j$(nproc)" pip install -e . --no-cache-dir
-
-RUN pip install --force-reinstall typing-extensions==4.5.0 --no-cache-dir
+RUN pip install einops optimum --no-cache-dir
+COPY test.py .
