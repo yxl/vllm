@@ -149,20 +149,20 @@ class QWenBlock(nn.Module):
                  config: QWenConfig,
                  quant_config: Optional[QuantizationConfig] = None):
         super().__init__()
-        self.ln_1 = RMSNorm(config.n_embd, eps=config.layer_norm_epsilon)
+        self.ln_1 = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
 
         rope_theta = getattr(config, "rope_theta", 10000)
-        self.attn = QWenAttention(config.n_embd,
+        self.attn = QWenAttention(config.hidden_size,
                                   config.num_attention_heads,
                                   config.max_position_embeddings,
                                   rope_theta=rope_theta,
                                   quant_config=quant_config)
 
-        self.ln_2 = RMSNorm(config.n_embd, eps=config.layer_norm_epsilon)
+        self.ln_2 = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
 
         self.mlp = QWenMLP(
-            config.n_embd,
-            config.ffn_hidden_size // 2,
+            config.hidden_size,
+            config.intermediate_size // 2,
             quant_config=quant_config,
         )
 
@@ -205,13 +205,13 @@ class QWenModel(nn.Module):
 
         vocab_size = ((config.vocab_size + 63) // 64) * 64
         self.wte = VocabParallelEmbedding(vocab_size,
-                                          config.n_embd,
+                                          config.hidden_size,
                                           perform_initialization=False)
         self.h = nn.ModuleList([
             QWenBlock(config, quant_config)
             for _ in range(config.num_hidden_layers)
         ])
-        self.ln_f = RMSNorm(config.n_embd, eps=config.layer_norm_epsilon)
+        self.ln_f = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
 
     def forward(
         self,
@@ -250,7 +250,7 @@ class QWenLMHeadModel(nn.Module):
         self.transformer = QWenModel(config, quant_config)
         vocab_size = ((config.vocab_size + 63) // 64) * 64
         self.lm_head = ParallelLinear.column(
-            config.n_embd,
+            config.hidden_size,
             vocab_size,
             bias=False,
             gather_output=False,
