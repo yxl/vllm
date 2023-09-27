@@ -23,7 +23,7 @@ RUN pip config set global.index-url https://mirrors.tencentyun.com/pypi/simple
 RUN pip uninstall torch -y --no-cache-dir
 
 # 其中qwen模型的依赖为 auto-gptq tiktoken transformers_stream_generator
-RUN pip install fschat==0.2.23 install auto-gptq tiktoken transformers_stream_generator --no-cache-dir
+RUN pip install fschat==0.2.29 auto-gptq tiktoken transformers_stream_generator --no-cache-dir
 
 RUN pip uninstall transformer-engine -y --no-cache-dir
 

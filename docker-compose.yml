@@ -1,7 +1,7 @@
 version: '3'
 services:
   vllm:
-    image: yuanxulei/vllm:0.0.8
+    image: yuanxulei/vllm:0.0.9
     # 用于通过 docker-compose build 构建本地测试镜像
     build:
       context: .
@@ -17,7 +17,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: [ '2' ]
+              device_ids: [ '6' ]
               capabilities: [ gpu ]
     logging:
       driver: json-file
