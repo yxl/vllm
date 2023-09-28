@@ -31,6 +31,8 @@ from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
 
+import torch
+
 try:
     import fastchat
     from fastchat.conversation import Conversation, SeparatorStyle
@@ -155,6 +157,12 @@ async def show_available_models():
                   permission=[ModelPermission()])
     ]
     return ModelList(data=model_cards)
+
+@app.get("/healthz")
+async def health_check():
+    """Health check"""
+    torch.zeros((2, 2)).cuda()
+    return "ok"
 
 
 def create_logprobs(token_ids: List[int],
