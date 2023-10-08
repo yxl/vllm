@@ -148,6 +148,12 @@ class QWenBlock(nn.Module):
 
         rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
+        if config.use_dynamic_ntk:
+            rope_scaling = {
+                "type": "dynamic",
+                "factor": 1.0,
+                "seq_length": getattr(config, "seq_length", 2048),
+            }
         self.attn = QWenAttention(config.hidden_size,
                                   config.num_attention_heads,
                                   config.max_position_embeddings,
