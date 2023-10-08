@@ -11,6 +11,7 @@ from vllm import attention_ops
 from vllm import cache_ops
 from vllm.model_executor.input_metadata import InputMetadata
 from vllm.model_executor.layers.rotary_embedding import (
+    DynamicNTKLogScalingRotaryEmbedding,
     DynamicNTKScalingRotaryEmbedding, LinearScalingRotaryEmbedding,
     RotaryEmbedding)
 
@@ -296,6 +297,10 @@ class PagedAttentionWithRoPE(PagedAttention):
                 self.rotary_emb = DynamicNTKScalingRotaryEmbedding(
                     head_size, rotary_dim, max_position, base, is_neox_style,
                     scaling_factor)
+            elif scaling_type == "dynamic_log":
+                self.rotary_emb = DynamicNTKLogScalingRotaryEmbedding(
+                    head_size, rotary_dim, max_position, base, is_neox_style,
+                    scaling_factor)
             else:
                 raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
 
@@ -330,6 +335,7 @@ class PagedAttentionWithRoPE(PagedAttention):
 
         # Apply rotary embedding to the query and key before passing them
         # to the attention op.
+        self.rotary_emb.update_cos_sin_cache(input_metadata.seq_groups[0][1].prompt_token_length)
         query, key = self.rotary_emb(positions, query, key)
         return super().forward(
             query,

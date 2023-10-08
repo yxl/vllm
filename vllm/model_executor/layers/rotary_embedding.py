@@ -22,6 +22,7 @@
 # limitations under the License.
 """Rotary Positional Embeddings."""
 from typing import Tuple, Union
+import math
 
 import torch
 import torch.nn as nn
@@ -39,6 +40,7 @@ class RotaryEmbedding(nn.Module):
         max_position_embeddings: int,
         base: int,
         is_neox_style: bool,
+        register_cache: bool = True,
     ) -> None:
         super().__init__()
         self.head_size = head_size
@@ -46,6 +48,9 @@ class RotaryEmbedding(nn.Module):
         self.max_position_embeddings = max_position_embeddings
         self.base = base
         self.is_neox_style = is_neox_style
+
+        if not register_cache:
+            return
 
         cache = self._compute_cos_sin_cache()
         cache = cache.to(torch.get_default_dtype())
@@ -66,6 +71,10 @@ class RotaryEmbedding(nn.Module):
             0, self.rotary_dim, 2, dtype=torch.float, device="cuda") /
                                  self.rotary_dim))
         return inv_freq
+
+    def update_cos_sin_cache(self, num_prompt_tokens: int) -> None:
+        """Update the cos and sin cache."""
+        pass
 
     def _compute_cos_sin_cache(self) -> torch.Tensor:
         """Compute the cos and sin cache."""
@@ -167,3 +176,45 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
         sin = freqs.sin()
         cache = torch.cat((cos, sin), dim=-1)
         return cache
+
+class DynamicNTKLogScalingRotaryEmbedding(RotaryEmbedding):
+    """RotaryEmbedding extended with Dynamic NTK scaling and dynamic logN scaling.
+    """
+
+    def __init__(
+        self,
+        head_size: int,
+        rotary_dim: int,
+        max_position_embeddings: int,
+        base: int,
+        is_neox_style: bool,
+        scaling_factor: float,
+    ) -> None:
+        self.scaling_factor = scaling_factor
+        self._num_prompt_tokens_cached = 0
+        self.dtype = torch.get_default_dtype()
+        super().__init__(head_size, rotary_dim, max_position_embeddings, base,
+                         is_neox_style, register_cache=False)
+
+    def update_cos_sin_cache(self, num_prompt_tokens: int) -> None:
+        max_len = self.max_position_embeddings * self.scaling_factor
+        if num_prompt_tokens == self._num_prompt_tokens_cached:
+            return
+        ntk_alpha = self.get_ntk_alpha(num_prompt_tokens)
+        base = self.base * ntk_alpha **(self.rotary_dim / (self.rotary_dim - 2))
+        inv_freq = self._compute_inv_freq(base)
+        t = torch.arange(max_len, dtype=torch.float, device="cuda")
+        freqs = torch.einsum("i,j -> ij", t, inv_freq)
+        cos = freqs.cos()
+        sin = freqs.sin()
+        cache = torch.cat((cos, sin), dim=-1)
+        cache = cache.to(self.dtype)
+        self.register_buffer("cos_sin_cache", cache, persistent=False)
+        self._num_prompt_tokens_cached = num_prompt_tokens
+
+    # Adapted from https://huggingface.co/Qwen/Qwen-14B-Chat/blob/main/modeling_qwen.py
+    def get_ntk_alpha(self, true_seq_len):
+        context_value = math.log(true_seq_len / self.max_position_embeddings, 2) + 1
+        ntk_alpha = 2 ** math.ceil(context_value) - 1
+        ntk_alpha = max(ntk_alpha, 1)
+        return ntk_alpha

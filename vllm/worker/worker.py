@@ -106,6 +106,7 @@ class Worker:
 
         input_tokens, input_positions, input_metadata = self._prepare_inputs(
             seqs)
+        sampling_params.prompt_token_length = len(input_tokens)
 
         # Execute the model.
         num_layers = self.model_config.get_num_layers(self.parallel_config)

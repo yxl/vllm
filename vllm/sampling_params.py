@@ -81,7 +81,9 @@ class SamplingParams:
         max_tokens: int = 16,
         logprobs: Optional[int] = None,
         skip_special_tokens: bool = True,
+        prompt_token_length: Optional[int] = None,
     ) -> None:
+        self.prompt_token_length = prompt_token_length
         self.n = n
         self.best_of = best_of if best_of is not None else n
         self.presence_penalty = presence_penalty
