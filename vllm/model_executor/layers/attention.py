@@ -12,7 +12,7 @@ from vllm import cache_ops
 from vllm.model_executor.input_metadata import InputMetadata
 from vllm.model_executor.layers.rotary_embedding import get_rope
 
-_SUPPORTED_HEAD_SIZES = [64, 80, 96, 112, 128, 256]
+_SUPPORTED_HEAD_SIZES = [64, 80, 96, 112, 128, 160, 256]
 # Should be the same as PARTITION_SIZE in `paged_attention_v2_launcher`.
 _PARTITION_SIZE = 512
 
@@ -351,6 +351,7 @@ class PagedAttentionWithRoPE(PagedAttention):
 
         # Apply rotary embedding to the query and key before passing them
         # to the attention op.
+        self.rotary_emb.update_cos_sin_cache(input_metadata.seq_groups[0][1].prompt_token_length)
         query, key = self.rotary_emb(positions, query, key)
         return super().forward(
             query,

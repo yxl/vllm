@@ -177,3 +177,4 @@ _build/
 # vim swap files
 *.swo
 *.swp
+data/

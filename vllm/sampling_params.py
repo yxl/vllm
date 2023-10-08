@@ -108,9 +108,10 @@ class SamplingParams:
         logprobs: Optional[int] = None,
         prompt_logprobs: Optional[int] = None,
         skip_special_tokens: bool = True,
-        spaces_between_special_tokens: bool = True,
-        logits_processors: Optional[List[LogitsProcessor]] = None,
+        spaces_between_special_tokens: bool = True,         logits_processors: Optional[List[LogitsProcessor]] = None,
+        prompt_token_length: Optional[int] = None,
     ) -> None:
+        self.prompt_token_length = prompt_token_length
         self.n = n
         self.best_of = best_of if best_of is not None else n
         self.presence_penalty = presence_penalty

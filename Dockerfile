@@ -1,9 +1,16 @@
 FROM nvidia/cuda:12.1.0-devel-ubuntu22.04 AS dev
 
+# 设置为中国国内源
+RUN sed -i "s@\(archive\|security\).ubuntu.com@mirrors.aliyun.com@g" /etc/apt/sources.list
+RUN echo >>/etc/apt/apt.conf.d/99verify-peer.conf "Acquire { https::Verify-Peer false }"
+
 RUN apt-get update -y \
     && apt-get install -y python3-pip
 
 WORKDIR /workspace
+
+# pip 国内加速
+RUN pip config set global.index-url https://mirrors.tencentyun.com/pypi/simple
 
 # install build and runtime dependencies
 COPY requirements.txt requirements.txt
@@ -43,9 +50,16 @@ ENTRYPOINT ["python3", "-m", "pytest", "tests"]
 # use CUDA base as CUDA runtime dependencies are already installed via pip
 FROM nvidia/cuda:12.1.0-base-ubuntu22.04 AS vllm-base
 
+# 设置为中国国内源
+RUN sed -i "s@\(archive\|security\).ubuntu.com@mirrors.aliyun.com@g" /etc/apt/sources.list
+RUN echo >>/etc/apt/apt.conf.d/99verify-peer.conf "Acquire { https::Verify-Peer false }"
+
 # libnccl required for ray
 RUN apt-get update -y \
     && apt-get install -y python3-pip
+
+# pip 国内加速
+RUN pip config set global.index-url https://mirrors.tencentyun.com/pypi/simple
 
 WORKDIR /workspace
 COPY requirements.txt requirements.txt
@@ -58,6 +72,9 @@ COPY vllm vllm
 
 EXPOSE 8000
 ENTRYPOINT ["python3", "-m", "vllm.entrypoints.api_server"]
+
+# pip 国内加速
+RUN pip config set global.index-url https://mirrors.tencentyun.com/pypi/simple
 
 # openai api server alternative
 FROM vllm-base AS vllm-openai
