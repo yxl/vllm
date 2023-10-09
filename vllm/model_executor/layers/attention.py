@@ -293,10 +293,9 @@ class PagedAttentionWithRoPE(PagedAttention):
                     head_size, rotary_dim, max_position, base, is_neox_style,
                     scaling_factor)
             elif scaling_type == "dynamic":
-                seq_length = getattr(rope_scaling, "seq_length", 2048)
                 self.rotary_emb = DynamicNTKScalingRotaryEmbedding(
                     head_size, rotary_dim, max_position, base, is_neox_style,
-                    scaling_factor, seq_length)
+                    scaling_factor)
             else:
                 raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
 
