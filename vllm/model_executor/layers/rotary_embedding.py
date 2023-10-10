@@ -22,7 +22,6 @@
 # limitations under the License.
 """Rotary Positional Embeddings."""
 from typing import Tuple, Union
-import math
 
 import torch
 import torch.nn as nn
@@ -145,10 +144,8 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
         base: int,
         is_neox_style: bool,
         scaling_factor: float,
-        seq_length: int,
     ) -> None:
         self.scaling_factor = scaling_factor
-        self.seq_length = seq_length
         super().__init__(head_size, rotary_dim, max_position_embeddings, base,
                          is_neox_style)
 
@@ -158,10 +155,9 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
         # Thus, the maximum length after applying the rope scaling is
         # self.max_position_embeddings * self.scaling_factor.
         max_len = self.max_position_embeddings * self.scaling_factor
-        context_value = math.log(max_len / self.seq_length, 2) + 1
-        ntk_alpha = 2 ** math.ceil(context_value) - 1
-        ntk_alpha = max(ntk_alpha, 1)
-        base = self.base * ntk_alpha**(self.rotary_dim /
+        base = self.base * (
+            (self.scaling_factor * max_len / self.max_position_embeddings) -
+            (self.scaling_factor - 1))**(self.rotary_dim /
                                          (self.rotary_dim - 2))
         inv_freq = self._compute_inv_freq(base)
         t = torch.arange(max_len, dtype=torch.float, device="cuda")
