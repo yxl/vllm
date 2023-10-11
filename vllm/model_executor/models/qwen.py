@@ -15,24 +15,22 @@ from torch import nn
 
 from vllm.model_executor.input_metadata import InputMetadata
 from vllm.model_executor.layers.activation import SiluAndMul
-from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm.model_executor.layers.attention import PagedAttentionWithRoPE
-from vllm.model_executor.layers.sampler import Sampler
+from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm.model_executor.layers.quantized_linear import ParallelLinear
-from vllm.model_executor.quantization_utils import QuantizationConfig
-from vllm.model_executor.weight_utils import (
-    convert_pyslice_to_tensor,
-    hf_model_weights_iterator,
-    load_padded_tensor_parallel_vocab,
-    load_tensor_parallel_weights,
-    get_parallel_weight,
-)
+from vllm.model_executor.layers.sampler import Sampler
+from vllm.model_executor.parallel_utils.layers import VocabParallelEmbedding
 from vllm.model_executor.parallel_utils.parallel_state import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
 )
-from vllm.model_executor.parallel_utils.layers import (
-    VocabParallelEmbedding,
+from vllm.model_executor.quantization_utils import QuantizationConfig
+from vllm.model_executor.weight_utils import (
+    convert_pyslice_to_tensor,
+    get_parallel_weight,
+    hf_model_weights_iterator,
+    load_padded_tensor_parallel_vocab,
+    load_tensor_parallel_weights,
 )
 from vllm.sequence import SamplerOutput
 from vllm.transformers_utils.configs.qwen import QWenConfig
@@ -110,6 +108,7 @@ class QWenAttention(nn.Module):
             quant_config=quant_config,
         )
         self.scaling = self.head_dim**-0.5
+
         self.attn = PagedAttentionWithRoPE(
             self.num_heads,
             self.head_dim,
@@ -129,8 +128,25 @@ class QWenAttention(nn.Module):
     ) -> torch.Tensor:
         #print(f"QWenAttention:input_metadata{input_metadata}")
         ids = getattr(input_metadata,'origin_prompt_token_ids',[])
-        if ids != None:
-            print(f"QWenAttention:input_metadata{len(ids)}")
+        if ids != None and len(ids) > 0:
+            # compose rope_scaling
+            rope_scaling = {
+                "type": "dynamic",
+                "seq_len": input_metadata.seq_len,
+                "true_seq_len": len(ids),
+            }
+            # TODO for qwen ? 
+            # rewrite for qwen
+            # https://huggingface.co/Qwen/Qwen-7B-Chat/blob/main/modeling_qwen.py#L779
+            self.attn = PagedAttentionWithRoPE(
+                self.num_heads,
+                self.head_dim,
+                self.scaling,
+                rotary_dim=self.head_dim,
+                base=self.base,
+                max_position=self.max_position_embeddings,
+                rope_scaling=rope_scaling)
+
         qkv, _ = self.c_attn(hidden_states)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
 
@@ -150,16 +166,19 @@ class QWenBlock(nn.Module):
         super().__init__()
         self.ln_1 = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
 
-        rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
-        max_position_embeddings = config.max_position_embeddings
+
+        rope_theta = getattr(config, "rotary_emb_base", 10000)
+        max_position_embeddings = getattr(config,"max_position_embeddings",8192)
+        seq_length = getattr(config, "seq_length", 8192)
+
         if config.use_dynamic_ntk:
-            seq_length = getattr(config, "seq_length", 2048)
             rope_scaling = {
                 "type": "dynamic",
-                "factor": config.max_position_embeddings / seq_length,
+                "seq_len": seq_length,
+                "factor": 1.0,
             }
-            max_position_embeddings = seq_length
+
         self.attn = QWenAttention(config.hidden_size,
                                   config.num_attention_heads,
                                   max_position_embeddings,
