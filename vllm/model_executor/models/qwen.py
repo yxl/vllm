@@ -130,6 +130,7 @@ class QWenAttention(nn.Module):
         cache_event: Optional[torch.cuda.Event],
     ) -> torch.Tensor:
         #print(f"QWenAttention:input_metadata{input_metadata}")
+
         qkv, _ = self.c_attn(hidden_states)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
 

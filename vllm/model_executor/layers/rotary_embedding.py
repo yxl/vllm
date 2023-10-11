@@ -68,6 +68,11 @@ class RotaryEmbedding(nn.Module):
                                  self.rotary_dim))
         return inv_freq
 
+    def update_cache(self,cache):
+        cache = cache.to(torch.get_default_dtype())
+        self.register_buffer("cos_sin_cache", cache, persistent=False)
+
+
     def _compute_cos_sin_cache(self) -> torch.Tensor:
         """Compute the cos and sin cache."""
         inv_freq = self._compute_inv_freq(self.base)

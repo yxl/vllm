@@ -307,7 +307,6 @@ class PagedAttentionWithRoPE(PagedAttention):
             elif scaling_type == "dynamic":
                 print("this is layer attension")
                 seq_length = rope_scaling.get("seq_length", 4096)
-                
                 true_seq_len = rope_scaling.get("true_seq_len",0)
                 self.rotary_emb = DynamicNTKScalingRotaryEmbedding(
                     head_size, rotary_dim, max_position, base, is_neox_style,
@@ -343,12 +342,15 @@ class PagedAttentionWithRoPE(PagedAttention):
         Returns:
             shape = [num_tokens, num_heads * head_size]
         """
-        rotary_emb = self.rotary_emb
+
+        #rotary_emb = self.rotary_emb
         ids = getattr(input_metadata,'origin_prompt_token_ids',[])
         if ids != None and len(ids) > 0:
             rotary_emb = DynamicNTKScalingRotaryEmbedding(
                     self.head_size, self.rotary_dim, self.max_position, self.base, self.is_neox_style,
                     self.scaling_factor, self.seq_length, len(ids))
+            cache = rotary_emb._compute_cos_sin_cache()
+            self.rotary_emb.update_cache(cache, ids, rotary_emb)
          
         # Apply rotary embedding to the query and key before passing them
         # to the attention op.
