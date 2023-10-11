@@ -130,31 +130,11 @@ class QWenAttention(nn.Module):
         cache_event: Optional[torch.cuda.Event],
     ) -> torch.Tensor:
         #print(f"QWenAttention:input_metadata{input_metadata}")
-        ids = getattr(input_metadata,'origin_prompt_token_ids',[])
-        attn = self.attn
-        if ids != None and len(ids) < 0:
-            # compose rope_scaling
-            rope_scaling = self.rope_scaling
-            rope_scaling["true_seq_len"] = len(ids)
-            
-            # TODO for qwen ? 
-            # rewrite for qwen
-            # https://huggingface.co/Qwen/Qwen-7B-Chat/blob/main/modeling_qwen.py#L779
-            print(self.max_position_embeddings)
-            attn = PagedAttentionWithRoPE(
-                self.num_heads,
-                self.head_dim,
-                self.scaling,
-                rotary_dim=self.head_dim,
-                base=self.rope_theta,
-                max_position=self.max_position_embeddings,
-                rope_scaling=rope_scaling)
-
         qkv, _ = self.c_attn(hidden_states)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
 
         k_cache, v_cache = kv_cache
-        attn_output = attn(positions, q, k, v, k_cache, v_cache,
+        attn_output = self.attn(positions, q, k, v, k_cache, v_cache,
                                 input_metadata, cache_event)
 
         output, _ = self.c_proj(attn_output)
@@ -214,30 +194,12 @@ class QWenBlock(nn.Module):
         input_metadata: InputMetadata,
         cache_event: Optional[torch.cuda.Event],
     ) -> torch.Tensor:
-        print("QWenBlock forward:{input_metadata}")
-        ids = getattr(input_metadata,'origin_prompt_token_ids',[])
-        attn = self.attn
-        if ids != None and len(ids) < 0:
-            # compose rope_scaling
-            rope_scaling = self.rope_scaling
-            rope_scaling["true_seq_len"] = len(ids)
-            
-            # TODO for qwen ? 
-            # rewrite for qwen
-            # https://huggingface.co/Qwen/Qwen-7B-Chat/blob/main/modeling_qwen.py#L779
-            print(self.max_position_embeddings)
-            attn = QWenAttention(
-                self.hidden_size,
-                self.num_attention_heads,
-                self.max_position_embeddings,
-                self.rope_theta,
-                rope_scaling=rope_scaling)
-
+        #getattr(input_metadata,'origin_prompt_token_ids',[])
 
         # Self Attention
         residual = hidden_states
         hidden_states = self.ln_1(hidden_states)
-        hidden_states = attn(
+        hidden_states = self.attn(
             positions=positions,
             hidden_states=hidden_states,
             kv_cache=kv_cache,
