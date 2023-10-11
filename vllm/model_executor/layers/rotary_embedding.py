@@ -210,6 +210,7 @@ class DynamicNTKLogScalingRotaryEmbedding(RotaryEmbedding):
         cache = cache.to(torch.get_default_dtype())
         self.register_buffer("cos_sin_cache", cache, persistent=False)
         self._num_prompt_tokens_cached = num_prompt_tokens
+        print(f"Updated rotary cache with {num_prompt_tokens} prompt tokens. NTK alpha: {ntk_alpha}, max_position_embeddings: {self.max_position_embeddings}")
 
     # Adapted from https://huggingface.co/Qwen/Qwen-14B-Chat/blob/main/modeling_qwen.py
     def get_ntk_alpha(self, true_seq_len):
