@@ -57,6 +57,7 @@ def _set_default_torch_dtype(dtype: torch.dtype):
 
 def _get_model_architecture(config: PretrainedConfig) -> Type[nn.Module]:
     architectures = getattr(config, "architectures", [])
+    print(f"architectures:{architectures}")
     for arch in architectures:
         if arch in _MODEL_REGISTRY:
             return _MODEL_REGISTRY[arch]

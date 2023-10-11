@@ -4,15 +4,18 @@ from typing import Any, Dict, List, Optional
 import torch
 import torch.nn as nn
 from xformers import ops as xops
-from xformers.ops.fmha.attn_bias import (BlockDiagonalCausalMask,
-                                         LowerTriangularMaskWithTensorBias)
+from xformers.ops.fmha.attn_bias import (
+    BlockDiagonalCausalMask,
+    LowerTriangularMaskWithTensorBias,
+)
 
-from vllm import attention_ops
-from vllm import cache_ops
+from vllm import attention_ops, cache_ops
 from vllm.model_executor.input_metadata import InputMetadata
 from vllm.model_executor.layers.rotary_embedding import (
-    DynamicNTKScalingRotaryEmbedding, LinearScalingRotaryEmbedding,
-    RotaryEmbedding)
+    DynamicNTKScalingRotaryEmbedding,
+    LinearScalingRotaryEmbedding,
+    RotaryEmbedding,
+)
 
 _SUPPORTED_HEAD_SIZES = [64, 80, 96, 112, 128, 160, 256]
 
@@ -293,9 +296,14 @@ class PagedAttentionWithRoPE(PagedAttention):
                     head_size, rotary_dim, max_position, base, is_neox_style,
                     scaling_factor)
             elif scaling_type == "dynamic":
+                seq_length = rope_scaling.get(seq_length, 4096)
+                true_seq_len = rope_scaling.get("true_seq_len")
+                if true_seq_len <= 0:
+                    raise ValueError(f" true_sql_len is empty {scaling_type}")
+
                 self.rotary_emb = DynamicNTKScalingRotaryEmbedding(
                     head_size, rotary_dim, max_position, base, is_neox_style,
-                    scaling_factor)
+                    scaling_factor, seq_length, true_seq_len)
             else:
                 raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
 

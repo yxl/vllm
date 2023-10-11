@@ -241,6 +241,7 @@ class LLMEngine:
         sampling_params: SamplingParams,
         prompt_token_ids: Optional[List[int]] = None,
         arrival_time: Optional[float] = None,
+        origin_prompt_token_ids: Optional[List[int]] = None
     ) -> None:
         """Add a request to the engine's request pool.
 
@@ -258,6 +259,7 @@ class LLMEngine:
             arrival_time: The arrival time of the request. If None, we use
                 the current monotonic time.
         """
+        #print(f"llm engine origin_prompt_token_ids: {origin_prompt_token_ids}")
         if arrival_time is None:
             arrival_time = time.monotonic()
         if prompt_token_ids is None:
@@ -271,7 +273,7 @@ class LLMEngine:
 
         # Create the sequence group.
         seq_group = SequenceGroup(request_id, [seq], sampling_params,
-                                  arrival_time)
+                                  arrival_time,origin_prompt_token_ids)
 
         # Add the sequence group to the scheduler.
         self.scheduler.add_seq_group(seq_group)
@@ -537,6 +539,8 @@ class LLMEngine:
             # Log the system stats.
             self._log_system_stats(scheduler_outputs.prompt_run,
                                    scheduler_outputs.num_batched_tokens)
+        #print(f"request_outputs:{getattr(request_outputs,'outputs',None)}")
+        print(f"request_outputs:{getattr(request_outputs[0],'outputs',None)}")
         return request_outputs
 
     def step(self) -> List[RequestOutput]:

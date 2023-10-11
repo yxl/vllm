@@ -1,19 +1,17 @@
 """A GPU worker class."""
 import os
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.distributed
 
-from vllm.config import (CacheConfig, ModelConfig, ParallelConfig,
-                         SchedulerConfig)
-from vllm.model_executor import get_model, InputMetadata, set_random_seed
-from vllm.model_executor.parallel_utils.parallel_state import (
-    initialize_model_parallel)
+from vllm.config import CacheConfig, ModelConfig, ParallelConfig, SchedulerConfig
+from vllm.model_executor import InputMetadata, get_model, set_random_seed
+from vllm.model_executor.parallel_utils.parallel_state import initialize_model_parallel
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import SamplerOutput, SequenceData, SequenceGroupMetadata
-from vllm.worker.cache_engine import CacheEngine
 from vllm.utils import get_gpu_memory, get_max_shared_memory_bytes
+from vllm.worker.cache_engine import CacheEngine
 
 
 class Worker:
@@ -165,7 +163,11 @@ class Worker:
 
         # Add prompt tokens.
         prompt_lens: List[int] = []
+        origin_prompt_token_ids : List[int] = []
         for seq_group_metadata in seq_group_metadata_list:
+            if origin_prompt_token_ids == []:
+                origin_prompt_token_ids = getattr(seq_group_metadata,"origin_prompt_token_ids",[])
+
             if not seq_group_metadata.is_prompt:
                 continue
 
@@ -320,6 +322,12 @@ class Worker:
         # Prepare input tensors.
         input_tokens, input_positions, input_metadata = self._prepare_inputs(
             seq_group_metadata_list)
+
+
+        # here add change ntk_alpha logic
+
+
+
 
         # Execute the model.
         output = self.model(
