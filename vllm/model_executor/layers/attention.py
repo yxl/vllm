@@ -317,7 +317,7 @@ class PagedAttentionWithRoPE(PagedAttention):
         cache_event: Optional[torch.cuda.Event],
     ) -> torch.Tensor:
         """ PagedAttention forward pass with rotary embedding.
-
+    
         Args:
             positions: shape = [num_tokens]
             query: shape = [num_tokens, num_heads * head_size]
@@ -336,6 +336,7 @@ class PagedAttentionWithRoPE(PagedAttention):
 
         # Apply rotary embedding to the query and key before passing them
         # to the attention op.
+        print("PagedAttentionWithRoPE xxxxxxxxxxxxxx-x-----x-x-x-x-xx-x-x-x-x-x-x-x-xx-")
         query, key = self.rotary_emb(positions, query, key)
         return super().forward(
             query,

@@ -131,7 +131,8 @@ class QWenAttention(nn.Module):
     ) -> torch.Tensor:
         #print(f"QWenAttention:input_metadata{input_metadata}")
         ids = getattr(input_metadata,'origin_prompt_token_ids',[])
-        if ids != None and len(ids) > 0:
+        attn = self.attn
+        if ids != None and len(ids) < 0:
             # compose rope_scaling
             rope_scaling = self.rope_scaling
             rope_scaling["true_seq_len"] = len(ids)
@@ -140,7 +141,7 @@ class QWenAttention(nn.Module):
             # rewrite for qwen
             # https://huggingface.co/Qwen/Qwen-7B-Chat/blob/main/modeling_qwen.py#L779
             print(self.max_position_embeddings)
-            self.attn = PagedAttentionWithRoPE(
+            attn = PagedAttentionWithRoPE(
                 self.num_heads,
                 self.head_dim,
                 self.scaling,
@@ -153,7 +154,7 @@ class QWenAttention(nn.Module):
         q, k, v = qkv.chunk(chunks=3, dim=-1)
 
         k_cache, v_cache = kv_cache
-        attn_output = self.attn(positions, q, k, v, k_cache, v_cache,
+        attn_output = attn(positions, q, k, v, k_cache, v_cache,
                                 input_metadata, cache_event)
 
         output, _ = self.c_proj(attn_output)
@@ -215,7 +216,8 @@ class QWenBlock(nn.Module):
     ) -> torch.Tensor:
         print("QWenBlock forward:{input_metadata}")
         ids = getattr(input_metadata,'origin_prompt_token_ids',[])
-        if ids != None and len(ids) > 0:
+        attn = self.attn
+        if ids != None and len(ids) < 0:
             # compose rope_scaling
             rope_scaling = self.rope_scaling
             rope_scaling["true_seq_len"] = len(ids)
@@ -224,7 +226,7 @@ class QWenBlock(nn.Module):
             # rewrite for qwen
             # https://huggingface.co/Qwen/Qwen-7B-Chat/blob/main/modeling_qwen.py#L779
             print(self.max_position_embeddings)
-            self.attn = QWenAttention(
+            attn = QWenAttention(
                 self.hidden_size,
                 self.num_attention_heads,
                 self.max_position_embeddings,
@@ -235,7 +237,7 @@ class QWenBlock(nn.Module):
         # Self Attention
         residual = hidden_states
         hidden_states = self.ln_1(hidden_states)
-        hidden_states = self.attn(
+        hidden_states = attn(
             positions=positions,
             hidden_states=hidden_states,
             kv_cache=kv_cache,
