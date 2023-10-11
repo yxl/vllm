@@ -154,11 +154,14 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
         # maximum length before applying the rope scaling.
         # Thus, the maximum length after applying the rope scaling is
         # self.max_position_embeddings * self.scaling_factor.
+        
         max_len = self.max_position_embeddings * self.scaling_factor
-        base = self.base * (
-            (self.scaling_factor * max_len / self.max_position_embeddings) -
-            (self.scaling_factor - 1))**(self.rotary_dim /
-                                         (self.rotary_dim - 2))
+     
+    
+        ntk_alpha = self.get_ntk_alpha(max_len)
+        print(f"ntk_alpha:{ntk_alpha}")
+        base = self.base * ntk_alpha ** ( self.rotary_dim / (self.rotary_dim - 2) )
+   
         inv_freq = self._compute_inv_freq(base)
         t = torch.arange(max_len, dtype=torch.float, device="cuda")
 
@@ -167,3 +170,14 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
         sin = freqs.sin()
         cache = torch.cat((cos, sin), dim=-1)
         return cache
+    def get_ntk_alpha(self,max_len):
+        import math
+        #ntk_alpha = (self.scaling_factor * max_len / self.max_position_embeddings) - (self.scaling_factor - 1)
+        
+        context_value = math.log( self.scaling_factor * self.max_position_embeddings / self.max_position_embeddings, 2) + 1
+       
+        ntk_alpha = 2 ** math.ceil(context_value) - 1
+      
+        ntk_alpha = max(ntk_alpha,1)
+        #ntk_alpha = 2
+        return ntk_alpha

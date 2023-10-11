@@ -165,9 +165,17 @@ class Worker:
 
         # Add prompt tokens.
         prompt_lens: List[int] = []
+        origin_prompt_token_ids : List[int] = []
         for seq_group_metadata in seq_group_metadata_list:
+            print(f"origin_prompt_token_ids:{getattr(seq_group_metadata,'origin_prompt_token_ids', [])}")
+            print(f"what is this logic")
+
+            if origin_prompt_token_ids == []:
+                origin_prompt_token_ids = getattr(seq_group_metadata,"origin_prompt_token_ids", [])
+
             if not seq_group_metadata.is_prompt:
                 continue
+
 
             seq_ids = list(seq_group_metadata.seq_data.keys())
             sampling_params = seq_group_metadata.sampling_params
@@ -282,6 +290,7 @@ class Worker:
             max_context_len=max_context_len,
             block_tables=block_tables_tensor,
             sliding_window=self.sliding_window,
+            origin_prompt_token_ids=origin_prompt_token_ids,
         )
         return tokens_tensor, positions_tensor, input_metadata
 
@@ -320,7 +329,7 @@ class Worker:
         # Prepare input tensors.
         input_tokens, input_positions, input_metadata = self._prepare_inputs(
             seq_group_metadata_list)
-
+        
         # Execute the model.
         output = self.model(
             input_ids=input_tokens,
@@ -329,6 +338,7 @@ class Worker:
             input_metadata=input_metadata,
             cache_events=cache_events,
         )
+        print(f"worker output:{output}")
         return output
 
 
