@@ -185,8 +185,14 @@ ext_modules.append(activation_extension)
 quantization_extension = CUDAExtension(
     name="vllm.quantization_ops",
     sources=[
-        "csrc/quantization.cpp",
-        "csrc/quantization/awq/gemm_kernels.cu",
+        "csrc/quantization.cpp", "csrc/quantization/awq/gemm_kernels.cu",
+        "csrc/quantization/gptq/exllama_ext.cpp",
+        "csrc/quantization/gptq/cuda_buffers.cu",
+        "csrc/quantization/gptq/cuda_func/column_remap.cu",
+        "csrc/quantization/gptq/cuda_func/q4_matmul.cu",
+        "csrc/quantization/gptq/cuda_func/q4_matrix.cu",
+        "csrc/quantization/gptq/old_matmul.cpp",
+        "csrc/quantization/gptq/old_matmul_kernel.cu"
     ],
     extra_compile_args={
         "cxx": CXX_FLAGS,
