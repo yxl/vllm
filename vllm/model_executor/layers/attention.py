@@ -284,6 +284,15 @@ class PagedAttentionWithRoPE(PagedAttention):
                          scale,
                          num_kv_heads,
                          sliding_window=sliding_window)
+
+        self.head_size = head_size
+        self.rotary_dim = rotary_dim
+        self.max_position = max_position
+        self.base = base
+        self.is_neox_style = is_neox_style
+        self.scaling_factor = rope_scaling["factor"] if rope_scaling else 1.0 
+        seq_length = rope_scaling.get("seq_length", 4096)
+
         if rope_scaling is None:
             self.rotary_emb = RotaryEmbedding(head_size, rotary_dim,
                                               max_position, base,
@@ -296,7 +305,7 @@ class PagedAttentionWithRoPE(PagedAttention):
                     head_size, rotary_dim, max_position, base, is_neox_style,
                     scaling_factor)
             elif scaling_type == "dynamic":
-                seq_length = rope_scaling.get("seq_length", 4096)
+                print("this is layer attension")
                 true_seq_len = rope_scaling.get("true_seq_len",0)
                 self.rotary_emb = DynamicNTKScalingRotaryEmbedding(
                     head_size, rotary_dim, max_position, base, is_neox_style,
@@ -332,7 +341,15 @@ class PagedAttentionWithRoPE(PagedAttention):
         Returns:
             shape = [num_tokens, num_heads * head_size]
         """
-
+        #rotary_emb = self.rotary_emb
+        ids = getattr(input_metadata,'origin_prompt_token_ids',[])
+        if ids != None and len(ids) > 0:
+            rotary_emb = DynamicNTKScalingRotaryEmbedding(
+                    self.head_size, self.rotary_dim, self.max_position, self.base, self.is_neox_style,
+                    self.scaling_factor, self.seq_length, len(ids))
+            cache = rotary_emb._compute_cos_sin_cache()
+            self.rotary_emb.update_cache(cache, ids, rotary_emb)
+         
         # Apply rotary embedding to the query and key before passing them
         # to the attention op.
         query, key = self.rotary_emb(positions, query, key)
