@@ -68,6 +68,11 @@ class RotaryEmbedding(nn.Module):
                                  self.rotary_dim))
         return inv_freq
 
+    def update_cache(self,cache):
+        cache = cache.to(torch.get_default_dtype())
+        self.register_buffer("cos_sin_cache", cache, persistent=False)
+
+
     def _compute_cos_sin_cache(self) -> torch.Tensor:
         """Compute the cos and sin cache."""
         inv_freq = self._compute_inv_freq(self.base)
@@ -145,11 +150,11 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
         base: int,
         is_neox_style: bool,
         scaling_factor: float,
-        seq_len: int,
+        seq_length: int,
         true_seq_len: int,
     ) -> None:
         self.scaling_factor = scaling_factor
-        self.seq_len = seq_len
+        self.seq_length = seq_length
         self.true_seq_len = true_seq_len
 
         super().__init__(head_size, rotary_dim, max_position_embeddings, base,
@@ -161,10 +166,10 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
         # Thus, the maximum length after applying the rope scaling is
         # self.max_position_embeddings * self.scaling_factor.
         ntk_alpha = 1.0
+        max_len = self.max_position_embeddings * self.scaling_factor
         if self.true_seq_len > 0:
             ntk_alpha = self.get_ntk_alpha_qwen()
         else:
-            max_len = self.max_position_embeddings * self.scaling_factor
             ntk_alpha = self.get_ntk_alpha(max_len)
 
         print(f"ntk_alpha:{ntk_alpha}")
@@ -178,12 +183,16 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
         sin = freqs.sin()
         cache = torch.cat((cos, sin), dim=-1)
         return cache
+
     def get_ntk_alpha(self,max_len):
         print(f"get_ntk_alpha max_len:{max_len},max_position_embeddings:{self.max_position_embeddings}")
         ntk_alpha = (self.scaling_factor * max_len / self.max_position_embeddings) - (self.scaling_factor - 1)
         return ntk_alpha
+
     def get_ntk_alpha_qwen(self):
+        print(f"get_ntk_alpha qwen true_seq_len:{self.true_seq_len},seq_length:{self.seq_length}")
         context_value = math.log(self.true_seq_len / self.seq_length, 2) + 1
         ntk_alpha = 2 ** math.ceil(context_value) - 1
-        ntk_alpha = max(ntk_alpha, 1)
+        print(f"debug:{ntk_alpha}")
+        ntk_alpha = max(ntk_alpha, 1.0)
         return ntk_alpha 
