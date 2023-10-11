@@ -91,6 +91,9 @@ class QWenAttention(nn.Module):
         self.num_heads = (self.total_num_heads //
                           tensor_model_parallel_world_size)
         self.head_dim = hidden_size // self.total_num_heads
+        self.rope_scaling = rope_scaling
+        self.rope_theta = rope_theta
+        self.max_position_embeddings = max_position_embeddings
 
         # pylint: disable=invalid-name
         self.c_attn = ParallelLinear.column(
@@ -130,20 +133,19 @@ class QWenAttention(nn.Module):
         ids = getattr(input_metadata,'origin_prompt_token_ids',[])
         if ids != None and len(ids) > 0:
             # compose rope_scaling
-            rope_scaling = {
-                "type": "dynamic",
-                "seq_len": input_metadata.seq_len,
-                "true_seq_len": len(ids),
-            }
+            rope_scaling = self.rope_scaling
+            rope_scaling["true_seq_len"] = len(ids)
+            
             # TODO for qwen ? 
             # rewrite for qwen
             # https://huggingface.co/Qwen/Qwen-7B-Chat/blob/main/modeling_qwen.py#L779
+            print(self.max_position_embeddings)
             self.attn = PagedAttentionWithRoPE(
                 self.num_heads,
                 self.head_dim,
                 self.scaling,
                 rotary_dim=self.head_dim,
-                base=self.base,
+                base=self.rope_theta,
                 max_position=self.max_position_embeddings,
                 rope_scaling=rope_scaling)
 
@@ -166,16 +168,28 @@ class QWenBlock(nn.Module):
         super().__init__()
         self.ln_1 = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
 
-        rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
-        max_position_embeddings = config.max_position_embeddings
+
+        rope_theta = getattr(config, "rotary_emb_base", 10000)
+        max_position_embeddings = getattr(config,"max_position_embeddings",8192)
+        seq_length = getattr(config, "seq_length", 8192)
+
         if config.use_dynamic_ntk:
-            seq_length = getattr(config, "seq_length", 2048)
-            rope_scaling = {
-                "type": "dynamic",
-                "factor": config.max_position_embeddings / seq_length,
-            }
-            max_position_embeddings = seq_length
+            if rope_scaling == None:
+                rope_scaling = {
+                    "type": "dynamic",
+                    "seq_len": seq_length,
+                    "factor": 1.0,
+                }
+            else:
+                rope_scaling["type"] = "dynamic"
+                rope_scaling["seq_len"] = seq_length
+                rope_scaling["factor"] = 1.0
+        self.rope_scaling = rope_scaling
+        self.max_position_embeddings = max_position_embeddings
+        self.hidden_size = config.hidden_size
+        self.num_attention_heads = config.num_attention_heads
+        self.rope_theta=rope_theta
         self.attn = QWenAttention(config.hidden_size,
                                   config.num_attention_heads,
                                   max_position_embeddings,
@@ -199,6 +213,25 @@ class QWenBlock(nn.Module):
         input_metadata: InputMetadata,
         cache_event: Optional[torch.cuda.Event],
     ) -> torch.Tensor:
+        print("QWenBlock forward:{input_metadata}")
+        ids = getattr(input_metadata,'origin_prompt_token_ids',[])
+        if ids != None and len(ids) > 0:
+            # compose rope_scaling
+            rope_scaling = self.rope_scaling
+            rope_scaling["true_seq_len"] = len(ids)
+            
+            # TODO for qwen ? 
+            # rewrite for qwen
+            # https://huggingface.co/Qwen/Qwen-7B-Chat/blob/main/modeling_qwen.py#L779
+            print(self.max_position_embeddings)
+            self.attn = QWenAttention(
+                self.hidden_size,
+                self.num_attention_heads,
+                self.max_position_embeddings,
+                self.rope_theta,
+                rope_scaling=rope_scaling)
+
+
         # Self Attention
         residual = hidden_states
         hidden_states = self.ln_1(hidden_states)

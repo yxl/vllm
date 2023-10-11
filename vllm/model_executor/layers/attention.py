@@ -296,6 +296,7 @@ class PagedAttentionWithRoPE(PagedAttention):
                     head_size, rotary_dim, max_position, base, is_neox_style,
                     scaling_factor)
             elif scaling_type == "dynamic":
+                print("this is layer attension")
                 seq_length = rope_scaling.get("seq_length", 4096)
                 true_seq_len = rope_scaling.get("true_seq_len",0)
                 self.rotary_emb = DynamicNTKScalingRotaryEmbedding(
