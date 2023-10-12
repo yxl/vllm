@@ -130,7 +130,8 @@ class QWenAttention(nn.Module):
         cache_event: Optional[torch.cuda.Event],
     ) -> torch.Tensor:
         #print(f"QWenAttention:input_metadata{input_metadata}")
-
+        ids = getattr(input_metadata,'origin_prompt_token_ids',[])
+        self.attn.update_cache(ids)
         qkv, _ = self.c_attn(hidden_states)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
 
@@ -200,6 +201,9 @@ class QWenBlock(nn.Module):
         # Self Attention
         residual = hidden_states
         hidden_states = self.ln_1(hidden_states)
+
+        #self.attn.
+
         hidden_states = self.attn(
             positions=positions,
             hidden_states=hidden_states,

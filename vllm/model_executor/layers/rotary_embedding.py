@@ -49,7 +49,10 @@ class RotaryEmbedding(nn.Module):
         self.is_neox_style = is_neox_style
 
         cache = self._compute_cos_sin_cache()
+        print(f"RotaryEmbedding:cache:{cache.dtype}")
         cache = cache.to(torch.get_default_dtype())
+        print(f"RotaryEmbedding:cache.to(torch.get_default_dtype()):cache:{torch.get_default_dtype()}")
+        print(f"RotaryEmbedding::cache:{cache.dtype}")
         self.register_buffer("cos_sin_cache", cache, persistent=False)
 
     def _compute_inv_freq(self, base: Union[int, float]) -> torch.Tensor:
@@ -69,6 +72,7 @@ class RotaryEmbedding(nn.Module):
         return inv_freq
 
     def update_cache(self,cache):
+        print(f"RotaryEmbedding update cache:{torch.get_default_dtype()}")
         cache = cache.to(torch.get_default_dtype())
         self.register_buffer("cos_sin_cache", cache, persistent=False)
 
@@ -94,6 +98,15 @@ class RotaryEmbedding(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # pos_encoding_ops.rotary_embedding() is an in-place operation that
         # updates the query and key tensors.
+        # Convert the tensors to float16 (Half) if they are not already
+        print(f"positions:{positions.dtype}")
+        print(f"query:{query.dtype}")
+        print(f"key:{key.dtype}")
+        if self.cos_sin_cache.dtype == torch.float32:
+            self.cos_sin_cache = self.cos_sin_cache.half()
+
+        print(f"self.cos_sin_cache type:{self.cos_sin_cache.dtype}") 
+
         pos_encoding_ops.rotary_embedding(positions, query, key,
                                           self.head_size, self.cos_sin_cache,
                                           self.is_neox_style)
@@ -182,17 +195,20 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
         cos = freqs.cos()
         sin = freqs.sin()
         cache = torch.cat((cos, sin), dim=-1)
+
+        print(f"_compute_cos_sin_cache cache: {cache.dtype}")
+
         return cache
 
     def get_ntk_alpha(self,max_len):
         print(f"get_ntk_alpha max_len:{max_len},max_position_embeddings:{self.max_position_embeddings}")
         ntk_alpha = (self.scaling_factor * max_len / self.max_position_embeddings) - (self.scaling_factor - 1)
+        ntk_alpha = 2.0
         return ntk_alpha
 
     def get_ntk_alpha_qwen(self):
         print(f"get_ntk_alpha qwen true_seq_len:{self.true_seq_len},seq_length:{self.seq_length}")
         context_value = math.log(self.true_seq_len / self.seq_length, 2) + 1
         ntk_alpha = 2 ** math.ceil(context_value) - 1
-        print(f"debug:{ntk_alpha}")
         ntk_alpha = max(ntk_alpha, 1.0)
         return ntk_alpha 
