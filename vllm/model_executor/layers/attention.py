@@ -292,6 +292,7 @@ class PagedAttentionWithRoPE(PagedAttention):
         self.is_neox_style = is_neox_style
         self.scaling_factor = rope_scaling["factor"] if rope_scaling else 1.0 
         self.seq_length = rope_scaling.get("seq_length", 4096)
+        seq_length = rope_scaling.get("seq_length", 4096)
 
         if rope_scaling is None:
             self.rotary_emb = RotaryEmbedding(head_size, rotary_dim,
@@ -313,6 +314,13 @@ class PagedAttentionWithRoPE(PagedAttention):
                     scaling_factor, seq_length, true_seq_len)
             else:
                 raise ValueError(f"Unknown RoPE scaling type {scaling_type}")
+    def update_cache(self, ids ):
+        if ids != None and len(ids) > 0:
+            rotary_emb = DynamicNTKScalingRotaryEmbedding(
+                    self.head_size, self.rotary_dim, self.max_position, self.base, self.is_neox_style,
+                    self.scaling_factor, self.seq_length, len(ids))
+            cache = rotary_emb._compute_cos_sin_cache()
+            self.rotary_emb.update_cache(cache)
 
     def forward(
         self,
@@ -342,7 +350,6 @@ class PagedAttentionWithRoPE(PagedAttention):
         Returns:
             shape = [num_tokens, num_heads * head_size]
         """
-
         #rotary_emb = self.rotary_emb
         ids = getattr(input_metadata,'origin_prompt_token_ids',[])
         if ids != None and len(ids) > 0:
@@ -350,14 +357,14 @@ class PagedAttentionWithRoPE(PagedAttention):
                     self.head_size, self.rotary_dim, self.max_position, self.base, self.is_neox_style,
                     self.scaling_factor, self.seq_length, len(ids))
             cache = rotary_emb._compute_cos_sin_cache()
-            self.rotary_emb.update_cache(cache, ids, rotary_emb)
+            self.rotary_emb.update_cache(cache)
          
         # Apply rotary embedding to the query and key before passing them
         # to the attention op.
 
         print("PagedAttentionWithRoPE xxxxxxxxxxxxxx-x-----x-x-x-x-xx-x-x-x-x-x-x-x-xx-")
         #query, key = self.rotary_emb(positions, query, key)
-        query, key = rotary_emb(positions, query, key)
+        query, key = self.rotary_emb(positions, query, key)
 
         return super().forward(
             query,
