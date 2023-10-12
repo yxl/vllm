@@ -7,10 +7,9 @@ import torch.nn as nn
 from transformers import PretrainedConfig
 
 from vllm.config import ModelConfig
-from vllm.model_executor.models import *  # pylint: disable=wildcard-import
-from vllm.model_executor.weight_utils import (get_quant_config,
-                                              initialize_dummy_weights)
 from vllm.model_executor.layers.quantized_linear.utils import quant_post_init
+from vllm.model_executor.models import *  # pylint: disable=wildcard-import
+from vllm.model_executor.weight_utils import get_quant_config, initialize_dummy_weights
 
 # TODO(woosuk): Lazy-load the model classes.
 _MODEL_REGISTRY = {
@@ -57,7 +56,7 @@ def _set_default_torch_dtype(dtype: torch.dtype):
 
 def _get_model_architecture(config: PretrainedConfig) -> Type[nn.Module]:
     architectures = getattr(config, "architectures", [])
-    print(f"architectures:{architectures}")
+ 
     for arch in architectures:
         if arch in _MODEL_REGISTRY:
             return _MODEL_REGISTRY[arch]

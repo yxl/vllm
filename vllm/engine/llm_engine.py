@@ -3,19 +3,24 @@ import time
 from functools import partial
 from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple, Union
 
-from vllm.config import (CacheConfig, ModelConfig, ParallelConfig,
-                         SchedulerConfig)
+import torch
+
+from vllm.config import CacheConfig, ModelConfig, ParallelConfig, SchedulerConfig
 from vllm.core.scheduler import Scheduler, SchedulerOutputs
 from vllm.engine.arg_utils import EngineArgs
 from vllm.engine.ray_utils import RayWorker, initialize_cluster, ray
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
-from vllm.sequence import (SamplerOutput, Sequence, SequenceGroup,
-                           SequenceGroupMetadata, SequenceOutputs,
-                           SequenceStatus)
-from vllm.transformers_utils.tokenizer import (detokenize_incrementally,
-                                               get_tokenizer)
+from vllm.sequence import (
+    SamplerOutput,
+    Sequence,
+    SequenceGroup,
+    SequenceGroupMetadata,
+    SequenceOutputs,
+    SequenceStatus,
+)
+from vllm.transformers_utils.tokenizer import detokenize_incrementally, get_tokenizer
 from vllm.utils import Counter
 
 if ray:
@@ -259,7 +264,6 @@ class LLMEngine:
             arrival_time: The arrival time of the request. If None, we use
                 the current monotonic time.
         """
-        #print(f"llm engine origin_prompt_token_ids: {origin_prompt_token_ids}")
         if arrival_time is None:
             arrival_time = time.monotonic()
         if prompt_token_ids is None:
@@ -274,6 +278,9 @@ class LLMEngine:
         # Create the sequence group.
         seq_group = SequenceGroup(request_id, [seq], sampling_params,
                                   arrival_time,origin_prompt_token_ids)
+
+
+        torch.set_default_dtype(self.model_config.dtype)        
 
         # Add the sequence group to the scheduler.
         self.scheduler.add_seq_group(seq_group)
@@ -384,8 +391,6 @@ class LLMEngine:
                 child = parent.fork(new_child_seq_id)
                 child.append_token_id(child_sample.output_token,
                                       child_sample.logprobs)
-                print(f"child:{child}")
-                print(f"parent:{parent}")
                 child_seqs.append((child, parent))
             # Continue the parent sequence for the last child sample.
             # We reuse the parent sequence here to reduce redundant memory
@@ -541,8 +546,6 @@ class LLMEngine:
             # Log the system stats.
             self._log_system_stats(scheduler_outputs.prompt_run,
                                    scheduler_outputs.num_batched_tokens)
-        #print(f"request_outputs:{getattr(request_outputs,'outputs',None)}")
-        print(f"request_outputs:{getattr(request_outputs[0],'outputs',None)}")
         return request_outputs
 
     def step(self) -> List[RequestOutput]:

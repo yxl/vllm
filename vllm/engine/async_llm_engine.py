@@ -1,8 +1,7 @@
 import asyncio
 import time
 from functools import partial
-from typing import (Any, Dict, Iterable, List, Optional, Set, Tuple, Type,
-                    Union)
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Type, Union
 
 from vllm.config import ModelConfig
 from vllm.engine.arg_utils import AsyncEngineArgs
@@ -11,8 +10,6 @@ from vllm.engine.ray_utils import initialize_cluster, ray
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
-
-from pprint import pprint
 
 logger = init_logger(__name__)
 
@@ -152,7 +149,6 @@ class RequestTracker:
             request_id = self._finished_requests.get_nowait()
             finished_requests.add(request_id)
             self._request_streams.pop(request_id, None)
-            print(f"get_new_and_finished_requests:finished_request:{finished_requests}")
 
         while not self._new_requests.empty():
             stream, new_request = self._new_requests.get_nowait()
@@ -162,7 +158,6 @@ class RequestTracker:
                 continue
             self._request_streams[stream.request_id] = stream
             new_requests.append(new_request)
-            print(f"get_new_and_finished_requests:new_request:{new_requests}")
 
         self.new_requests_event.clear()
 
@@ -186,8 +181,7 @@ class _AsyncLLMEngine(LLMEngine):
         the sequences and returns the newly generated results.
         """
         seq_group_metadata_list, scheduler_outputs, ignored = self._schedule()
-        print(f"_AsyncLLMEngine step_async : {len(seq_group_metadata_list)}")
-        print(f"start run execute_model")
+
         if scheduler_outputs.is_empty():
             return ignored
         # Execute the model.
@@ -210,7 +204,6 @@ class _AsyncLLMEngine(LLMEngine):
     ) -> Any:
         """Runs the given method on all workers."""
 
-        print(f"got start run execute_model")
         all_outputs = []
         for worker in self.workers:
             if self.parallel_config.worker_use_ray:
@@ -316,8 +309,7 @@ class AsyncLLMEngine:
         Returns True if there are in-progress requests."""
         new_requests, finished_requests = (
             self._request_tracker.get_new_and_finished_requests())
-        print(f"engine_step new_request:{new_requests}")
-        print(f"engine_step finished:{finished_requests}")
+        
         for new_request in new_requests:
             # Add the request into the vLLM engine's waiting queue.
             # TODO: Maybe add add_request_batch to reduce Ray overhead
@@ -388,7 +380,7 @@ class AsyncLLMEngine:
                     "error that caused the background loop to stop "
                     "(AsyncEngineDeadError).")
         origin_prompt_token_ids=prompt_token_ids
-        #print(f"origin_prompt_token_ids:{origin_prompt_token_ids}")
+     
         stream = self._request_tracker.add_request(
             request_id,
             prompt=prompt,

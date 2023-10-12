@@ -9,6 +9,7 @@ from http import HTTPStatus
 from typing import AsyncGenerator, Dict, List, Optional, Tuple, Union
 
 import fastapi
+import torch
 import uvicorn
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
@@ -19,12 +20,25 @@ from packaging import version
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.openai.protocol import (
-    CompletionRequest, CompletionResponse, CompletionResponseChoice,
-    CompletionResponseStreamChoice, CompletionStreamResponse,
-    ChatCompletionRequest, ChatCompletionResponse,
-    ChatCompletionResponseChoice, ChatCompletionResponseStreamChoice,
-    ChatCompletionStreamResponse, ChatMessage, DeltaMessage, ErrorResponse,
-    LogProbs, ModelCard, ModelList, ModelPermission, UsageInfo)
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatCompletionResponseChoice,
+    ChatCompletionResponseStreamChoice,
+    ChatCompletionStreamResponse,
+    ChatMessage,
+    CompletionRequest,
+    CompletionResponse,
+    CompletionResponseChoice,
+    CompletionResponseStreamChoice,
+    CompletionStreamResponse,
+    DeltaMessage,
+    ErrorResponse,
+    LogProbs,
+    ModelCard,
+    ModelList,
+    ModelPermission,
+    UsageInfo,
+)
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
@@ -148,6 +162,11 @@ async def check_length(
     else:
         return input_ids, None
 
+@app.get("/healthz")
+async def health_check():
+    """Health check"""
+    torch.zeros((2, 2)).cuda()
+    return "ok"
 
 @app.get("/v1/models")
 async def show_available_models():

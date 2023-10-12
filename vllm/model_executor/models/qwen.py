@@ -117,8 +117,8 @@ class QWenAttention(nn.Module):
             self.head_dim,
             self.scaling,
             rotary_dim=self.head_dim,
-            base=rope_theta,
             max_position=max_position_embeddings,
+            base=rope_theta,
             rope_scaling=rope_scaling)
 
     def forward(
@@ -129,9 +129,7 @@ class QWenAttention(nn.Module):
         input_metadata: InputMetadata,
         cache_event: Optional[torch.cuda.Event],
     ) -> torch.Tensor:
-        #print(f"QWenAttention:input_metadata{input_metadata}")
-        ids = getattr(input_metadata,'origin_prompt_token_ids',[])
-        self.attn.update_cache(ids)
+        
         qkv, _ = self.c_attn(hidden_states)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
 
@@ -160,14 +158,14 @@ class QWenBlock(nn.Module):
         if config.use_dynamic_ntk:
             if rope_scaling == None:
                 rope_scaling = {
-                    "type": "dynamic",
+                    "type": "dynamic-qwen",
                     "seq_len": seq_length,
-                    "factor": 1.0,
+                    "factor": 2.0,
                 }
             else:
-                rope_scaling["type"] = "dynamic"
+                rope_scaling["type"] = "dynamic-qwen"
                 rope_scaling["seq_len"] = seq_length
-                rope_scaling["factor"] = 1.0
+                rope_scaling["factor"] = 2.0
         self.rope_scaling = rope_scaling
         self.max_position_embeddings = max_position_embeddings
         self.hidden_size = config.hidden_size
@@ -196,12 +194,9 @@ class QWenBlock(nn.Module):
         input_metadata: InputMetadata,
         cache_event: Optional[torch.cuda.Event],
     ) -> torch.Tensor:
-        #getattr(input_metadata,'origin_prompt_token_ids',[])
-
         # Self Attention
         residual = hidden_states
         hidden_states = self.ln_1(hidden_states)
-
         hidden_states = self.attn(
             positions=positions,
             hidden_states=hidden_states,
