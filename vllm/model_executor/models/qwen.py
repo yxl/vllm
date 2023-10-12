@@ -150,7 +150,7 @@ class QWenBlock(nn.Module):
         rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
         max_position_embeddings = config.max_position_embeddings
-        if config.use_dynamic_ntk:
+        if config.use_dynamic_ntk and config.use_logn_attn:
             seq_length = getattr(config, "seq_length", 2048)
             rope_scaling = {
                 "type": "dynamic_log",

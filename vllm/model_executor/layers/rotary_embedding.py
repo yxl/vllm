@@ -41,6 +41,7 @@ class RotaryEmbedding(nn.Module):
         base: int,
         is_neox_style: bool,
         register_cache: bool = True,
+        use_logn_attn: bool = False,
     ) -> None:
         super().__init__()
         self.head_size = head_size
@@ -48,6 +49,15 @@ class RotaryEmbedding(nn.Module):
         self.max_position_embeddings = max_position_embeddings
         self.base = base
         self.is_neox_style = is_neox_style
+        self.use_logn_attn = use_logn_attn
+
+        if self.use_logn_attn:
+            logn_list = [
+                math.log(i, self.max_position_embeddings) if i > self.max_position_embeddings else 1
+                for i in range(1, 32768)
+            ]
+            logn_tensor = torch.tensor(logn_list)[None, :]
+            self.register_buffer("logn_tensor", logn_tensor, persistent=False)
 
         if not register_cache:
             return
@@ -100,6 +110,11 @@ class RotaryEmbedding(nn.Module):
         pos_encoding_ops.rotary_embedding(positions, query, key,
                                           self.head_size, self.cos_sin_cache,
                                           self.is_neox_style)
+        if self.use_logn_attn:
+            seq_start = key.size(1) - query.size(1)
+            seq_end = key.size(1)
+            logn_tensor = self.logn_tensor[:, seq_start:seq_end]
+            query = query * logn_tensor.expand_as(query)
         return query, key
 
 
@@ -194,7 +209,7 @@ class DynamicNTKLogScalingRotaryEmbedding(RotaryEmbedding):
         self._num_prompt_tokens_cached = 0
         self.dtype = torch.get_default_dtype()
         super().__init__(head_size, rotary_dim, max_position_embeddings, base,
-                         is_neox_style, register_cache=False)
+                         is_neox_style, register_cache=False, use_logn_attn=True)
 
     def update_cos_sin_cache(self, num_prompt_tokens: int) -> None:
         max_len = self.max_position_embeddings * self.scaling_factor
