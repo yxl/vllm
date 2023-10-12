@@ -33,17 +33,10 @@ _MODEL_REGISTRY = {
 }
 
 # FIXME(woosuk): Remove this once all models support quantization.
-_MODEL_CLASSES_SUPPORT_QUANTIZATION = {
-    "awq": [LlamaForCausalLM],
-    "gptq": [
-        LlamaForCausalLM, QWenLMHeadModel, BaiChuanForCausalLM,
-        BaichuanForCausalLM, BloomForCausalLM, GPT2LMHeadModel,
-        GPTJForCausalLM, GPTNeoXForCausalLM, GPTBigCodeForCausalLM,
-        InternLMForCausalLM, FalconForCausalLM, AquilaForCausalLM,
-        OPTForCausalLM, MPTForCausalLM
-    ],
-}
-
+_MODEL_CLASSES_SUPPORT_QUANTIZATION = [
+    LlamaForCausalLM,
+    MistralForCausalLM,
+]
 
 @contextlib.contextmanager
 def _set_default_torch_dtype(dtype: torch.dtype):
