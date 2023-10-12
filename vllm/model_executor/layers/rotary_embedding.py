@@ -203,6 +203,7 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
     def get_ntk_alpha(self,max_len):
         print(f"get_ntk_alpha max_len:{max_len},max_position_embeddings:{self.max_position_embeddings}")
         ntk_alpha = (self.scaling_factor * max_len / self.max_position_embeddings) - (self.scaling_factor - 1)
+        ntk_alpha = 2.0
         return ntk_alpha
 
     def get_ntk_alpha_qwen(self):
