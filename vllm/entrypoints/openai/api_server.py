@@ -478,7 +478,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
     stop = request.stop
     stop = [] if stop is None else stop if isinstance(stop, list) else [stop]
     if is_qwen(model_name):
-        stop = list(set(stop + ["<|endoftext|>", "<|im_end|>"]))
+        stop = list(set(stop + ["<|endoftext|>", "<|im_start|>", "<|im_end|>"]))
         if not use_token_ids and '<|im_start|>' not in prompt:
             prompt = f'<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n'
 
