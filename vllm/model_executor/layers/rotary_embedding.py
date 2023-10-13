@@ -247,9 +247,9 @@ class DynamicNTKScalingRotaryEmbeddingQwen(RotaryEmbedding):
         # refer to the implementation of qwen
         # https://huggingface.co/Qwen/Qwen-7B-Chat/blob/main/modeling_qwen.py#L779
 
-        self.use_logn_attn = True
-
         max_len = self.max_position_embeddings * self.scaling_factor
+
+        self.use_logn_attn = True
 
         ntk_alpha = self.get_ntk_alpha(true_seq_len)
 
