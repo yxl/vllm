@@ -8,6 +8,7 @@
 The input of the model is flattened to a 1D tensor of tokens. The model uses
 InputMetadata to extract the original 2D shape of the input.
 """
+import math
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
@@ -39,7 +40,6 @@ KVCache = Tuple[torch.Tensor, torch.Tensor]
 
 
 class QWenMLP(nn.Module):
-
     def __init__(
         self,
         hidden_size: int,
@@ -63,8 +63,10 @@ class QWenMLP(nn.Module):
             quant_config=quant_config,
         )
         if hidden_act != "silu":
-            raise ValueError(f"Unsupported activation: {hidden_act}. "
-                             "Only silu is supported for now.")
+            raise ValueError(
+                f"Unsupported activation: {hidden_act}. "
+                "Only silu is supported for now."
+            )
         self.act_fn = SiluAndMul()
 
     def forward(self, x):
@@ -75,21 +77,21 @@ class QWenMLP(nn.Module):
 
 
 class QWenAttention(nn.Module):
-    def __init__(self,
-                 hidden_size: int,
-                 num_heads: int,
-                 max_position_embeddings: int,
-                 rope_theta: float = 10000,
-                 rope_scaling: Optional[Dict[str, Any]] = None,
-                 quant_config: Optional[QuantizationConfig] = None,):
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int,
+        max_position_embeddings: int,
+        rope_theta: float = 10000,
+        rope_scaling: Optional[Dict[str, Any]] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+    ):
         super().__init__()
         self.hidden_size = hidden_size
-        tensor_model_parallel_world_size = get_tensor_model_parallel_world_size(
-        )
+        tensor_model_parallel_world_size = get_tensor_model_parallel_world_size()
         self.total_num_heads = num_heads
         assert self.total_num_heads % tensor_model_parallel_world_size == 0
-        self.num_heads = (self.total_num_heads //
-                          tensor_model_parallel_world_size)
+        self.num_heads = self.total_num_heads // tensor_model_parallel_world_size
         self.head_dim = hidden_size // self.total_num_heads
         self.rope_scaling = rope_scaling
         self.rope_theta = rope_theta
@@ -119,7 +121,8 @@ class QWenAttention(nn.Module):
             rotary_dim=self.head_dim,
             max_position=max_position_embeddings,
             base=rope_theta,
-            rope_scaling=rope_scaling)
+            rope_scaling=rope_scaling,
+        )
 
     def forward(
         self,
@@ -129,30 +132,29 @@ class QWenAttention(nn.Module):
         input_metadata: InputMetadata,
         cache_event: Optional[torch.cuda.Event],
     ) -> torch.Tensor:
-        
         qkv, _ = self.c_attn(hidden_states)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
 
         k_cache, v_cache = kv_cache
-        attn_output = self.attn(positions, q, k, v, k_cache, v_cache,
-                                input_metadata, cache_event)
+        attn_output = self.attn(
+            positions, q, k, v, k_cache, v_cache, input_metadata, cache_event
+        )
 
         output, _ = self.c_proj(attn_output)
         return output
 
 
 class QWenBlock(nn.Module):
-
-    def __init__(self,
-                 config: QWenConfig,
-                 quant_config: Optional[QuantizationConfig] = None):
+    def __init__(
+        self, config: QWenConfig, quant_config: Optional[QuantizationConfig] = None
+    ):
         super().__init__()
         self.ln_1 = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
 
         rope_scaling = getattr(config, "rope_scaling", None)
 
         rope_theta = getattr(config, "rotary_emb_base", 10000)
-        max_position_embeddings = getattr(config,"max_position_embeddings",8192)
+        max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
         seq_length = getattr(config, "seq_length", 8192)
 
         if config.use_dynamic_ntk:
@@ -170,13 +172,15 @@ class QWenBlock(nn.Module):
         self.max_position_embeddings = max_position_embeddings
         self.hidden_size = config.hidden_size
         self.num_attention_heads = config.num_attention_heads
-        self.rope_theta=rope_theta
-        self.attn = QWenAttention(config.hidden_size,
-                                  config.num_attention_heads,
-                                  max_position_embeddings,
-                                  rope_theta=rope_theta,
-                                  rope_scaling=rope_scaling,
-                                  quant_config=quant_config)
+        self.rope_theta = rope_theta
+        self.attn = QWenAttention(
+            config.hidden_size,
+            config.num_attention_heads,
+            max_position_embeddings,
+            rope_theta=rope_theta,
+            rope_scaling=rope_scaling,
+            quant_config=quant_config,
+        )
 
         self.ln_2 = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
 
@@ -215,10 +219,9 @@ class QWenBlock(nn.Module):
 
 
 class QWenModel(nn.Module):
-
-    def __init__(self,
-                 config: QWenConfig,
-                 quant_config: Optional[QuantizationConfig] = None):
+    def __init__(
+        self, config: QWenConfig, quant_config: Optional[QuantizationConfig] = None
+    ):
         super().__init__()
         self.config = config
         self.vocab_size = config.vocab_size
@@ -228,10 +231,9 @@ class QWenModel(nn.Module):
             vocab_size,
             config.hidden_size,
         )
-        self.h = nn.ModuleList([
-            QWenBlock(config, quant_config)
-            for _ in range(config.num_hidden_layers)
-        ])
+        self.h = nn.ModuleList(
+            [QWenBlock(config, quant_config) for _ in range(config.num_hidden_layers)]
+        )
         self.ln_f = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
 
     def forward(
@@ -261,10 +263,9 @@ class QWenModel(nn.Module):
 
 
 class QWenLMHeadModel(nn.Module):
-
-    def __init__(self,
-                 config: QWenConfig,
-                 quant_config: Optional[QuantizationConfig] = None):
+    def __init__(
+        self, config: QWenConfig, quant_config: Optional[QuantizationConfig] = None
+    ):
         super().__init__()
         self.config = config
         self.quant_config = quant_config
@@ -275,7 +276,7 @@ class QWenLMHeadModel(nn.Module):
             vocab_size,
             bias=False,
             gather_output=False,
-            quant_config=None
+            quant_config=None,
         )
         self.sampler = Sampler(config.vocab_size)
 
@@ -287,10 +288,10 @@ class QWenLMHeadModel(nn.Module):
         input_metadata: InputMetadata,
         cache_events: Optional[List[torch.cuda.Event]],
     ) -> SamplerOutput:
-        hidden_states = self.transformer(input_ids, positions, kv_caches,
-                                         input_metadata, cache_events)
-        next_tokens = self.sampler(self.lm_head.weight, hidden_states,
-                                   input_metadata)
+        hidden_states = self.transformer(
+            input_ids, positions, kv_caches, input_metadata, cache_events
+        )
+        next_tokens = self.sampler(self.lm_head.weight, hidden_states, input_metadata)
         return next_tokens
 
     column_parallel_layers = []
@@ -303,14 +304,18 @@ class QWenLMHeadModel(nn.Module):
         load_format: str = "auto",
         revision: Optional[str] = None,
     ):
-        (column_parallel_weights, row_parallel_weights,
-         ignore_weight_suffixes) = get_parallel_weight(self)
+        (
+            column_parallel_weights,
+            row_parallel_weights,
+            ignore_weight_suffixes,
+        ) = get_parallel_weight(self)
         tp_world_size = get_tensor_model_parallel_world_size()
         tp_rank = get_tensor_model_parallel_rank()
         state_dict = self.state_dict()
 
         for name, loaded_weight in hf_model_weights_iterator(
-                model_name_or_path, cache_dir, load_format, revision):
+            model_name_or_path, cache_dir, load_format, revision
+        ):
             if "rotary_emb.inv_freq" in name:
                 continue
             if any(name.endswith(suffix) for suffix in ignore_weight_suffixes):
@@ -331,8 +336,9 @@ class QWenLMHeadModel(nn.Module):
                 head_end = (tp_rank + 1) * num_heads
 
                 weight_shape = loaded_weight.shape
-                loaded_weight = loaded_weight.view(3, total_num_heads, -1,
-                                                   *weight_shape[1:])
+                loaded_weight = loaded_weight.view(
+                    3, total_num_heads, -1, *weight_shape[1:]
+                )
                 loaded_weight = loaded_weight[:, head_start:head_end]
                 loaded_weight = loaded_weight.reshape(-1, *weight_shape[1:])
 
@@ -349,10 +355,12 @@ class QWenLMHeadModel(nn.Module):
                 if is_transposed:
                     param = param.T
                 shard_size = param.shape[0] // 2
-                loaded_weight = loaded_weight[shard_size * tp_rank:shard_size *
-                                              (tp_rank + 1)]
-                param_slice = param.data[shard_size * stride_id:shard_size *
-                                         (stride_id + 1)]
+                loaded_weight = loaded_weight[
+                    shard_size * tp_rank : shard_size * (tp_rank + 1)
+                ]
+                param_slice = param.data[
+                    shard_size * stride_id : shard_size * (stride_id + 1)
+                ]
                 assert param_slice.shape == loaded_weight.shape
                 param_slice.copy_(loaded_weight)
                 is_gate_up_weight = True
@@ -367,8 +375,7 @@ class QWenLMHeadModel(nn.Module):
                 param = param.T
 
             if "wte" in name or "lm_head" in name:
-                load_padded_tensor_parallel_vocab(param, loaded_weight,
-                                                  tp_rank)
+                load_padded_tensor_parallel_vocab(param, loaded_weight, tp_rank)
                 continue
 
             load_tensor_parallel_weights(
