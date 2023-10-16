@@ -43,7 +43,6 @@ class RotaryEmbedding(nn.Module):
         max_position_embeddings: int,
         base: int,
         is_neox_style: bool,
-        use_logn_attn: Optional[bool] = False,
     ) -> None:
         super().__init__()
         self.head_size = head_size
@@ -55,17 +54,6 @@ class RotaryEmbedding(nn.Module):
         cache = self._compute_cos_sin_cache()
         cache = cache.to(torch.get_default_dtype())
         self.register_buffer("cos_sin_cache", cache, persistent=False)
-
-        self.use_logn_attn = use_logn_attn
-
-        logn_list = [
-            math.log(i, self.max_position_embeddings)
-            if i > self.max_position_embeddings
-            else 1
-            for i in range(1, 32768)
-        ]
-        logn_tensor = torch.tensor(logn_list)[None, :, None, None]
-        self.register_buffer("logn_tensor", logn_tensor, persistent=False)
 
     def _compute_inv_freq(self, base: Union[int, float]) -> torch.Tensor:
         """Compute the inverse frequency."""
@@ -115,12 +103,6 @@ class RotaryEmbedding(nn.Module):
             self.cos_sin_cache,
             self.is_neox_style,
         )
-
-        if self.use_logn_attn:
-            seq_start = key.size(1) - query.size(1)
-            seq_end = key.size(1)
-            logn_tensor = self.logn_tensor[:, seq_start:seq_end, :, :]
-            query = query * logn_tensor.expand_as(query)
 
         return query, key
 
@@ -249,8 +231,6 @@ class DynamicNTKScalingRotaryEmbeddingQwen(RotaryEmbedding):
 
         max_len = self.max_position_embeddings * self.scaling_factor
 
-        self.use_logn_attn = True
-
         ntk_alpha = self.get_ntk_alpha(true_seq_len)
 
         base = self.base * ntk_alpha ** (self.rotary_dim / (self.rotary_dim - 2))
@@ -274,7 +254,7 @@ class DynamicNTKScalingRotaryEmbeddingQwen(RotaryEmbedding):
         ntk_alpha = 2 ** math.ceil(context_value) - 1
         ntk_alpha = max(ntk_alpha, 1.0)
 
-        logger.info(
+        logger.debug(
             f"true_seq_len: {true_seq_len},seq_length: {self.seq_length},ntk_alpha: {ntk_alpha}"
         )
 
