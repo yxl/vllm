@@ -151,23 +151,16 @@ class QWenBlock(nn.Module):
         super().__init__()
         self.ln_1 = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
 
-        rope_scaling = getattr(config, "rope_scaling", None)
+        rope_scaling = getattr(config, "rope_scaling", {})
 
         rope_theta = getattr(config, "rotary_emb_base", 10000)
         max_position_embeddings = getattr(config, "max_position_embeddings", 8192)
         seq_length = getattr(config, "seq_length", 8192)
 
-        if config.use_dynamic_ntk:
-            if rope_scaling == None:
-                rope_scaling = {
-                    "type": "dynamic-qwen",
-                    "seq_len": seq_length,
-                    "factor": 2.0,
-                }
-            else:
-                rope_scaling["type"] = "dynamic-qwen"
-                rope_scaling["seq_len"] = seq_length
-                rope_scaling["factor"] = 2.0
+        if config.use_dynamic_ntk and config.use_logn_attn:
+            rope_scaling["type"] = "dynamic-qwen"
+            rope_scaling["seq_len"] = seq_length
+            rope_scaling["factor"] = 2.1
         self.rope_scaling = rope_scaling
         self.max_position_embeddings = max_position_embeddings
         self.hidden_size = config.hidden_size
