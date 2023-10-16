@@ -18,7 +18,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         && rm -rf /var/lib/apt/lists/*
 
 # pip 国内加速
-RUN pip config set global.index-url https://mirrors.tencentyun.com/pypi/simple
+RUN pip config set global.index-url https://nexus.4pd.io/repository/pypi-all/simple
 
 #RUN pip uninstall torch -y --no-cache-dir
 
@@ -28,4 +28,11 @@ RUN pip install einops optimum auto-gptq tiktoken transformers_stream_generator 
 WORKDIR /usr/src
 
 RUN pip install einops optimum --no-cache-dir
+RUN pip install fastapi uvicorn openai "pydantic>=2.3.0" sse_starlette
+
+#COPY Makefile-flash-att Makefile
+# Build specific version of flash attention
+#RUN MAKEFLAGS="-j$(nproc)" make build-flash-attention
+
 COPY test.py .
+COPY openai_api.py .

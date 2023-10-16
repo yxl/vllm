@@ -3,6 +3,9 @@ services:
   qwen:
     image: yuanxulei/qwen:0.0.1
     build: ./qwen
+    command: python openai_api.py -c qwen-14b-chat-int4 --server-name 0.0.0.0
+    ports:
+      - 8000:8000
     volumes:
       # 模型等数据挂载目录，默认为当前项目的 data 目录
       - ./data/qwen-14b-chat-int4:/usr/src/qwen-14b-chat-int4

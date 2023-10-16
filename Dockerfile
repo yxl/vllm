@@ -18,7 +18,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         && rm -rf /var/lib/apt/lists/*
 
 # pip 国内加速
-RUN pip config set global.index-url https://mirrors.tencentyun.com/pypi/simple
+RUN pip config set global.index-url https://nexus.4pd.io/repository/pypi-all/simple/
 
 RUN pip uninstall torch -y --no-cache-dir
 
