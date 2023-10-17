@@ -159,7 +159,7 @@ class QWenBlock(nn.Module):
 
         if config.use_dynamic_ntk and config.use_logn_attn:
             rope_scaling["type"] = "dynamic-qwen"
-            rope_scaling["seq_len"] = seq_length
+            rope_scaling["seq_length"] = seq_length
             rope_scaling["factor"] = 2.1
         self.rope_scaling = rope_scaling
         self.max_position_embeddings = max_position_embeddings
