@@ -88,6 +88,9 @@ class RotaryEmbedding(nn.Module):
         )
         return inv_freq
 
+    def update_compute_cos_sin_cache(self, true_seq_len):
+        pass
+
     def _compute_cos_sin_cache(self) -> torch.Tensor:
         """Compute the cos and sin cache."""
         inv_freq = self._compute_inv_freq(self.base)
@@ -185,8 +188,6 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
             max_position_embeddings,
             base,
             is_neox_style,
-            register_cache=False,
-            use_logn_attn=True,
         )
 
     def _compute_cos_sin_cache(self) -> torch.Tensor:
