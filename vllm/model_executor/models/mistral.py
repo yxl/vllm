@@ -29,6 +29,7 @@ from typing import List, Optional, Tuple
 
 import torch
 from torch import nn
+from transformers import MistralConfig
 
 from vllm.model_executor.input_metadata import InputMetadata
 from vllm.model_executor.layers.activation import SiluAndMul
@@ -45,7 +46,6 @@ from vllm.model_executor.weight_utils import (
     load_tensor_parallel_weights, load_padded_tensor_parallel_vocab,
     get_parallel_weight)
 from vllm.sequence import SamplerOutput
-from vllm.transformers_utils.configs.mistral import MistralConfig
 
 KVCache = Tuple[torch.Tensor, torch.Tensor]
 
