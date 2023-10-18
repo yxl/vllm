@@ -3,19 +3,24 @@ import time
 from functools import partial
 from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple, Union
 
-from vllm.config import (CacheConfig, ModelConfig, ParallelConfig,
-                         SchedulerConfig)
+import torch
+
+from vllm.config import CacheConfig, ModelConfig, ParallelConfig, SchedulerConfig
 from vllm.core.scheduler import Scheduler, SchedulerOutputs
 from vllm.engine.arg_utils import EngineArgs
 from vllm.engine.ray_utils import RayWorker, initialize_cluster, ray
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
-from vllm.sequence import (SamplerOutput, Sequence, SequenceGroup,
-                           SequenceGroupMetadata, SequenceOutputs,
-                           SequenceStatus)
-from vllm.transformers_utils.tokenizer import (detokenize_incrementally,
-                                               get_tokenizer)
+from vllm.sequence import (
+    SamplerOutput,
+    Sequence,
+    SequenceGroup,
+    SequenceGroupMetadata,
+    SequenceOutputs,
+    SequenceStatus,
+)
+from vllm.transformers_utils.tokenizer import detokenize_incrementally, get_tokenizer
 from vllm.utils import Counter
 
 if ray:
@@ -241,6 +246,7 @@ class LLMEngine:
         sampling_params: SamplingParams,
         prompt_token_ids: Optional[List[int]] = None,
         arrival_time: Optional[float] = None,
+        origin_prompt_token_ids: Optional[List[int]] = None
     ) -> None:
         """Add a request to the engine's request pool.
 
@@ -271,7 +277,10 @@ class LLMEngine:
 
         # Create the sequence group.
         seq_group = SequenceGroup(request_id, [seq], sampling_params,
-                                  arrival_time)
+                                  arrival_time,origin_prompt_token_ids)
+
+
+        torch.set_default_dtype(self.model_config.dtype)        
 
         # Add the sequence group to the scheduler.
         self.scheduler.add_seq_group(seq_group)

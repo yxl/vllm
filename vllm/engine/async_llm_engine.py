@@ -1,8 +1,7 @@
 import asyncio
 import time
 from functools import partial
-from typing import (Any, Dict, Iterable, List, Optional, Set, Tuple, Type,
-                    Union)
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Type, Union
 
 from vllm.config import ModelConfig
 from vllm.engine.arg_utils import AsyncEngineArgs
@@ -117,7 +116,6 @@ class RequestTracker:
         loop iteration."""
         if request_id in self._request_streams:
             raise KeyError(f"Request {request_id} already exists.")
-
         stream = AsyncStream(request_id)
         self._new_requests.put_nowait((stream, {
             "request_id": request_id,
@@ -147,7 +145,6 @@ class RequestTracker:
         sent to the engine."""
         new_requests: List[dict] = []
         finished_requests: Set[str] = set()
-
         while not self._finished_requests.empty():
             request_id = self._finished_requests.get_nowait()
             finished_requests.add(request_id)
@@ -184,9 +181,9 @@ class _AsyncLLMEngine(LLMEngine):
         the sequences and returns the newly generated results.
         """
         seq_group_metadata_list, scheduler_outputs, ignored = self._schedule()
+
         if scheduler_outputs.is_empty():
             return ignored
-
         # Execute the model.
         output = await self._run_workers_async(
             "execute_model",
@@ -206,6 +203,7 @@ class _AsyncLLMEngine(LLMEngine):
         **kwargs,
     ) -> Any:
         """Runs the given method on all workers."""
+
         all_outputs = []
         for worker in self.workers:
             if self.parallel_config.worker_use_ray:
@@ -309,10 +307,9 @@ class AsyncLLMEngine:
         """Kick the engine to process the waiting requests.
 
         Returns True if there are in-progress requests."""
-
         new_requests, finished_requests = (
             self._request_tracker.get_new_and_finished_requests())
-
+        
         for new_request in new_requests:
             # Add the request into the vLLM engine's waiting queue.
             # TODO: Maybe add add_request_batch to reduce Ray overhead
@@ -382,13 +379,16 @@ class AsyncLLMEngine:
                     "inspect the output to find the stacktrace of the "
                     "error that caused the background loop to stop "
                     "(AsyncEngineDeadError).")
-
+        origin_prompt_token_ids=prompt_token_ids
+     
         stream = self._request_tracker.add_request(
             request_id,
             prompt=prompt,
             sampling_params=sampling_params,
             prompt_token_ids=prompt_token_ids,
-            arrival_time=arrival_time)
+            arrival_time=arrival_time,
+            origin_prompt_token_ids=origin_prompt_token_ids,
+            )
 
         return stream
 
@@ -419,7 +419,6 @@ class AsyncLLMEngine:
         # Preprocess the request.
         # This should not be used for logging, as it is monotonic time.
         arrival_time = time.monotonic()
-
         try:
             stream = await self.add_request(request_id,
                                             prompt,

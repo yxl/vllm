@@ -1,0 +1,10 @@
+flash_att_commit := v1.0.8
+
+flash-attention:
+    # Clone flash attention
+	pip install packaging
+	git clone https://ghproxy.com/https://github.com/Dao-AILab/flash-attention
+
+build-flash-attention: flash-attention
+	cd flash-attention && git fetch && git checkout $(flash_att_commit)
+	cd flash-attention && find -type f -exec sed -i 's,https://github.com/,https://ghproxy.com/https://github.com/,g' {} + && pip install . && pip install csrc/layer_norm && pip install csrc/rotary

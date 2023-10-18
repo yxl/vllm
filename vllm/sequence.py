@@ -233,11 +233,13 @@ class SequenceGroup:
         seqs: List[Sequence],
         sampling_params: SamplingParams,
         arrival_time: float,
+        origin_prompt_token_ids: Optional[List[int]] = None,
     ) -> None:
         self.request_id = request_id
         self.seqs_dict = {seq.seq_id: seq for seq in seqs}
         self.sampling_params = sampling_params
         self.arrival_time = arrival_time
+        self.origin_prompt_token_ids = origin_prompt_token_ids
 
     def get_max_num_running_seqs(self) -> int:
         """The maximum number of sequences running in parallel in the remaining
@@ -328,12 +330,14 @@ class SequenceGroupMetadata:
         seq_data: Dict[int, SequenceData],
         sampling_params: SamplingParams,
         block_tables: Dict[int, List[int]],
+        origin_prompt_token_ids: Optional[List[int]]=None,
     ) -> None:
         self.request_id = request_id
         self.is_prompt = is_prompt
         self.seq_data = seq_data
         self.sampling_params = sampling_params
         self.block_tables = block_tables
+        self.origin_prompt_token_ids = origin_prompt_token_ids
 
 
 class SequenceOutputs:
