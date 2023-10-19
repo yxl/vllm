@@ -61,7 +61,7 @@ class RotaryEmbedding(nn.Module):
                 else 1
                 for i in range(1, 32768)
             ]
-            logn_tensor = torch.tensor(logn_list)[None, :]
+            logn_tensor = torch.tensor(logn_list)[None, :, None]
             self.register_buffer("logn_tensor", logn_tensor, persistent=False)
 
         cache = self._compute_cos_sin_cache()

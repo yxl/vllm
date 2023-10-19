@@ -165,7 +165,9 @@ class GPTQColumnParallelLinear(ColumnParallelLinear):
         out_shape = x.shape[:-1] + (self.qweight.shape[-1],)
         reshaped_x = x.reshape(-1, x.shape[-1])
         output = torch.empty(
-            (x.shape[0], self.qweight.shape[-1]), dtype=torch.float16, device=x.device
+            (reshaped_x.shape[0], self.qweight.shape[-1]),
+            dtype=torch.float16,
+            device=x.device,
         )
         quantization_ops.gptq_q4_matmul(reshaped_x, self.q4, output)
         if bias is not None:
@@ -248,14 +250,14 @@ class GPTQRowParallelLinear(RowParallelLinear):
 
         if self.use_exllama:
             output = torch.empty(
-                (x.shape[0], self.qweight.shape[-1]),
+                (reshaped_x.shape[0], self.qweight.shape[-1]),
                 dtype=torch.float16,
                 device=x.device,
             )
             quantization_ops.gptq_q4_matmul(reshaped_x, self.q4, output)
         else:
             output = torch.zeros(
-                (x.shape[0], self.qweight.shape[-1]),
+                (reshaped_x.shape[0], self.qweight.shape[-1]),
                 dtype=torch.float32,
                 device=x.device,
             )
