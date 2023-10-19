@@ -246,12 +246,6 @@ class Worker:
                     block_table = block_table[-sliding_window_blocks:]
                 generation_block_tables.append(block_table)
 
-        # Optimization: Pad the input length to be a multiple of 8.
-        # This is required for utilizing the Tensor Cores in NVIDIA GPUs.
-        if self.model_config.quantization is None:
-            input_tokens = _pad_to_alignment(input_tokens, multiple_of=8)
-            input_positions = _pad_to_alignment(input_positions, multiple_of=8)
-
         max_seq_len = max(prompt_lens) if prompt_lens else 1
         padded_input_tokens = [
             _pad_to_max(tokens, max_seq_len, pad=0) for tokens in input_tokens
@@ -382,11 +376,13 @@ def _init_distributed_environment(
     )
 
 
-def _pad_to_alignment(x: List[int], multiple_of: int, pad: int) -> List[int]:
+def _pad_to_alignment(
+    x: List[int], multiple_of: int, pad: Optional[int] = 0
+) -> List[int]:
     return x + [pad] * ((-len(x)) % multiple_of)
 
 
-def _pad_to_max(x: List[int], max_len: int, pad: int) -> List[int]:
+def _pad_to_max(x: List[int], max_len: int, pad: Optional[int] = 0) -> List[int]:
     return x + [pad] * (max_len - len(x))
 
 
