@@ -43,7 +43,8 @@ from vllm.model_executor.parallel_utils.layers import VocabParallelEmbedding
 from vllm.model_executor.quantization_utils import QuantizationConfig
 from vllm.model_executor.weight_utils import (
     convert_pyslice_to_tensor, hf_model_weights_iterator,
-    load_tensor_parallel_weights, load_padded_tensor_parallel_vocab)
+    load_tensor_parallel_weights, load_padded_tensor_parallel_vocab,
+    get_parallel_weight)
 from vllm.sequence import SamplerOutput
 
 KVCache = Tuple[torch.Tensor, torch.Tensor]
@@ -305,31 +306,19 @@ class LlamaForCausalLM(nn.Module):
                                    input_metadata)
         return next_tokens
 
-    _column_parallel_layers = []
-    _row_parallel_layers = ["o_proj", "down_proj"]
+    column_parallel_layers = []
+    row_parallel_layers = ["o_proj", "down_proj"]
 
     def load_weights(self,
                      model_name_or_path: str,
                      cache_dir: Optional[str] = None,
                      load_format: str = "auto",
                      revision: Optional[str] = None):
-        if self.quant_config is None:
-            col_weight_suffixes = ["weight"]
-            row_weight_suffixes = ["weight"]
-        else:
-            col_weight_suffixes = (
-                self.quant_config.get_col_parallel_tensor_names())
-            row_weight_suffixes = (
-                self.quant_config.get_row_parallel_tensor_names())
-
-        column_parallel_weights: List[str] = []
-        for layer in self._column_parallel_layers:
-            for suffix in col_weight_suffixes:
-                column_parallel_weights.append(f"{layer}.{suffix}")
-        row_parallel_weights: List[str] = []
-        for layer in self._row_parallel_layers:
-            for suffix in row_weight_suffixes:
-                row_parallel_weights.append(f"{layer}.{suffix}")
+        column_parallel_weights, row_parallel_weights = get_parallel_weight(
+            self)
+        column_weight_suffixes = (
+            self.quant_config.get_col_parallel_tensor_names()
+        ) if self.quant_config is not None else ["weight", "bias"]
 
         tp_size = get_tensor_model_parallel_world_size()
         tp_rank = get_tensor_model_parallel_rank()
@@ -368,7 +357,10 @@ class LlamaForCausalLM(nn.Module):
             for weight_name, shard_size, offset in attention_weight_specs:
                 if weight_name not in name:
                     continue
-                param = state_dict[name.replace(weight_name, "qkv_proj")]
+                name = name.replace(weight_name, "qkv_proj")
+                if name not in state_dict:
+                    break
+                param = state_dict[name]
                 if is_transposed:
                     param = param.T
 
@@ -382,10 +374,16 @@ class LlamaForCausalLM(nn.Module):
                     shard_id = tp_rank // num_kv_heads_replicas
                 else:
                     shard_id = tp_rank
-                loaded_weight = loaded_weight[shard_size *
-                                              shard_id:shard_size *
-                                              (shard_id + 1)]
-                param_slice = param.data[offset:offset + shard_size]
+                if any(
+                        name.endswith(suffix)
+                        for suffix in column_weight_suffixes):
+                    loaded_weight = loaded_weight[shard_size *
+                                                  shard_id:shard_size *
+                                                  (shard_id + 1)]
+                    param_slice = param.data[offset:offset + shard_size]
+                else:
+                    loaded_weight = convert_pyslice_to_tensor(loaded_weight)
+                    param_slice = param.data
                 assert param_slice.shape == loaded_weight.shape
 
                 param_slice.copy_(loaded_weight)
@@ -398,15 +396,26 @@ class LlamaForCausalLM(nn.Module):
             for stride_id, weight_name in enumerate(["gate_proj", "up_proj"]):
                 if weight_name not in name:
                     continue
-                param = state_dict[name.replace(weight_name, "gate_up_proj")]
+                name = name.replace(weight_name, "gate_up_proj")
+                if name not in state_dict:
+                    break
+                param = state_dict[name]
                 if is_transposed:
                     param = param.T
 
                 shard_size = param.shape[0] // 2
-                loaded_weight = loaded_weight[shard_size * tp_rank:shard_size *
-                                              (tp_rank + 1)]
-                param_slice = param.data[shard_size * stride_id:shard_size *
-                                         (stride_id + 1)]
+                if any(
+                        name.endswith(suffix)
+                        for suffix in column_weight_suffixes):
+                    loaded_weight = loaded_weight[shard_size *
+                                                  tp_rank:shard_size *
+                                                  (tp_rank + 1)]
+                    param_slice = param.data[shard_size *
+                                             stride_id:shard_size *
+                                             (stride_id + 1)]
+                else:
+                    loaded_weight = convert_pyslice_to_tensor(loaded_weight)
+                    param_slice = param.data
                 assert param_slice.shape == loaded_weight.shape
                 param_slice.copy_(loaded_weight)
                 is_gate_up_weight = True
@@ -414,6 +423,8 @@ class LlamaForCausalLM(nn.Module):
             if is_gate_up_weight:
                 continue
 
+            if name not in state_dict:
+                continue
             param = state_dict[name]
             if is_transposed:
                 param = param.T
