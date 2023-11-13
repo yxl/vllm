@@ -10,6 +10,7 @@ from typing import Optional
 import torch
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
+from peft.tuners.lora import LoraLayer
 
 from vllm.model_executor.parallel_utils.parallel_state import (
     get_tensor_model_parallel_rank,
@@ -300,4 +301,102 @@ class RowParallelLinear(torch.nn.Module):
         else:
             output = output_
             output_bias = self.bias
+        return output, output_bias
+
+
+def compulate_lora(obj: LoraLayer, x: torch.Tensor, output: torch.Tensor,
+                   lora_masks: dict[str, torch.Tensor]) -> torch.Tensor:
+    lora_out = torch.zeros_like(output)
+    for lora_id, lora_mask in lora_masks.items():
+        # compute lora separately and use mask to filter
+        if lora_id in obj.lora_A.keys():
+            lora_result = obj.scaling[lora_id] * obj.lora_B[lora_id](
+                obj.lora_A[lora_id](x))
+            lora_out += (lora_result * lora_mask.unsqueeze(1).unsqueeze(2))
+    return lora_out
+
+
+class BLoraColumnParallelLinear(ColumnParallelLinear, LoraLayer):
+
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        adapter_name: str,
+        bias: bool = True,
+        gather_output: bool = True,
+        skip_bias_add: bool = False,
+        params_dtype: Optional[torch.dtype] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        r: int = 0,
+        lora_alpha: int = 1,
+        lora_dropout: float = 0.0,
+        **kwargs,
+    ):
+        init_lora_weights = kwargs.pop('init_lora_weights', True)
+
+        ColumnParallelLinear.__init__(self, input_size, output_size, bias,
+                                      gather_output, skip_bias_add,
+                                      params_dtype, quant_config)
+        LoraLayer.__init__(self,
+                           in_features=input_size,
+                           out_features=output_size)
+        self.update_layer(adapter_name, r, lora_alpha, lora_dropout,
+                          init_lora_weights)
+        self.active_adapter = adapter_name
+
+    def forward(self, x: torch.Tensor):
+        previous_dtype = x.dtype
+        output, output_bias = ColumnParallelLinear.forward(self, x)
+        x = x.to(self.lora_A[self.active_adapter].weight.dtype)
+        lora_out = compulate_lora(self, x, output, self.lora_masks)
+        output += lora_out
+        output = output.to(previous_dtype)
+        if output_bias is not None:
+            output_bias = output_bias.to(previous_dtype)
+
+        return output, output_bias
+
+
+class BLoraRowParallelLinear(RowParallelLinear, LoraLayer):
+
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        adapter_name: str,
+        bias: bool = True,
+        input_is_parallel: bool = False,
+        reduce_results: bool = True,
+        skip_bias_add: bool = False,
+        params_dtype: Optional[torch.dtype] = None,
+        quant_config: Optional[QuantizationConfig] = None,
+        r: int = 0,
+        lora_alpha: int = 1,
+        lora_dropout: float = 0.0,
+        **kwargs,
+    ):
+        init_lora_weights = kwargs.pop('init_lora_weights', True)
+
+        RowParallelLinear.__init__(self, input_size, output_size, bias,
+                                   input_is_parallel, skip_bias_add,
+                                   params_dtype, reduce_results, quant_config)
+        LoraLayer.__init__(self,
+                           in_features=input_size,
+                           out_features=output_size)
+        self.update_layer(adapter_name, r, lora_alpha, lora_dropout,
+                          init_lora_weights)
+        self.active_adapter = adapter_name
+
+    def forward(self, x: torch.Tensor):
+        previous_dtype = x.dtype
+        output, output_bias = RowParallelLinear.forward(self, x)
+        x = x.to(self.lora_A[self.active_adapter].weight.dtype)
+        lora_out = compulate_lora(self, x, output, self.lora_masks)
+        output += lora_out
+
+        output = output.to(previous_dtype)
+        if output_bias is not None:
+            output_bias = output_bias.to(previous_dtype)
+
         return output, output_bias

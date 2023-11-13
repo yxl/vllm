@@ -42,7 +42,9 @@ from vllm.model_executor.weight_utils import (
     get_parallel_weight)
 from vllm.model_executor.parallel_utils.parallel_state import (
     get_tensor_model_parallel_rank, get_tensor_model_parallel_world_size)
-from vllm.model_executor.parallel_utils.layers import VocabParallelEmbedding
+from vllm.model_executor.parallel_utils.layers import (
+    VocabParallelEmbedding, ColumnParallelLinear, RowParallelLinear,
+    BLoraColumnParallelLinear, BLoraRowParallelLinear)
 from vllm.sequence import SamplerOutput
 from vllm.transformers_utils.configs.baichuan import BaiChuanConfig
 
@@ -298,12 +300,34 @@ class BaiChuanModel(nn.Module):
         return hidden_states
 
 
+class NormHead(ColumnParallelLinear):
+
+    def __init__(self, hidden_size, vocab_size, bias=False):
+        super().__init__(hidden_size,
+                         vocab_size,
+                         bias=False,
+                         gather_output=False)
+        self.first_flag = True
+
+    def get_weight(self):
+        if self.first_flag:
+            self.first_flag = False
+            self.weight = nn.Parameter(nn.functional.normalize(self.weight))
+        return self.weight
+
+    def forward(self, hidden_states):
+        if self.first_flag:
+            self.first_flag = False
+            self.weight = nn.Parameter(nn.functional.normalize(self.weight))
+        return ColumnParallelLinear.forward(self, hidden_states)
+
+
 class BaiChuanBaseForCausalLM(nn.Module):
 
     def __init__(self,
                  config,
                  position_embedding: str,
-                 quant_config: Optional[QuantizationConfig] = None):
+                 quant_config: Optional[QuantizationConfig] = None, version: str = "1"):
         super().__init__()
         self.config = config
         self.quant_config = quant_config
@@ -315,6 +339,22 @@ class BaiChuanBaseForCausalLM(nn.Module):
             gather_output=False,
             quant_config=None,
         )
+        self.version = version
+        if version == "1":
+            self.lm_head = ColumnParallelLinear(
+                config.hidden_size,
+                config.vocab_size,
+                bias=False,
+                gather_output=False,
+            )
+        elif version == "2":
+            self.lm_head = NormHead(
+                config.hidden_size,
+                config.vocab_size,
+                bias=False,
+            )
+        else:
+            raise ValueError("Only support baichuan version 1 and 2")
         self.sampler = Sampler(config.vocab_size)
 
     def forward(
@@ -325,9 +365,39 @@ class BaiChuanBaseForCausalLM(nn.Module):
         input_metadata: InputMetadata,
         cache_events: Optional[List[torch.cuda.Event]],
     ) -> SamplerOutput:
+        # create and set lora mask
+        batch_lora_ids = {}
+        total_length = input_ids.shape[0]
+        index = 0
+        for seq_groups in input_metadata.seq_groups:
+            seq_ids = seq_groups[0]
+            sampling_params = seq_groups[1]
+            for i in range(len(seq_ids)):
+                lora_id = sampling_params.lora_id
+                index_set = batch_lora_ids.get(lora_id, set())
+                index_set.add(index)
+                batch_lora_ids[lora_id] = index_set
+                index += 1
+        # lora mask for compute lora in a batch: lora_id -> mask
+        lora_masks = {}
+        for lora_id, pos in batch_lora_ids.items():
+            mask = torch.zeros(total_length, device=input_ids.device)
+            for i in range(total_length):
+                if i in pos:
+                    mask[i] = 1
+            lora_masks[lora_id] = mask
+
+        for _, module in self.model.named_modules():
+            if isinstance(module,
+                          (BLoraColumnParallelLinear, BLoraRowParallelLinear)):
+                module.lora_masks = lora_masks
+
         hidden_states = self.model(input_ids, positions, kv_caches,
                                    input_metadata, cache_events)
-        next_tokens = self.sampler(self.lm_head.weight, hidden_states,
+        lm_head_weight = self.lm_head.weight
+        if self.version == "2":
+            lm_head_weight = self.lm_head.get_weight()
+        next_tokens = self.sampler(lm_head_weight, hidden_states,
                                    input_metadata)
         return next_tokens
 
@@ -420,6 +490,35 @@ class BaiChuanBaseForCausalLM(nn.Module):
                 param,
                 loaded_weight,
                 name,
+                self._column_parallel_weights,
+                self._row_parallel_weights,
+                tp_rank,
+            )
+
+    def load_lora_weights_parallel(self, lora_state_dict: dict):
+        model_state_dict = self.state_dict()
+        tp_rank = get_tensor_model_parallel_rank()
+        for name, loaded_weight in lora_state_dict.items():
+            if name not in model_state_dict.keys():
+                raise ValueError(f"No module named {name} " +
+                                 f"in base model: {model_state_dict.keys()}")
+            param = model_state_dict[name]
+            column_parallel_weights = []
+            row_parallel_weights = []
+            if "W_pack" in name:
+                if "lora_B" in name:
+                    column_parallel_weights.append("lora_B")
+
+            elif "o_proj" in name:
+                if "lora_A" in name:
+                    row_parallel_weights.append("lora_A")
+            else:
+                raise ValueError("Only support target module for W_pack" +
+                                 f"and o_proj now! Target module:{name}")
+            load_tensor_parallel_weights(
+                param,
+                loaded_weight,
+                name,
                 column_parallel_weights,
                 row_parallel_weights,
                 tp_rank,
@@ -434,5 +533,17 @@ class BaichuanForCausalLM(BaiChuanBaseForCausalLM):  # baichuan 13b
 
 class BaiChuanForCausalLM(BaiChuanBaseForCausalLM):  # baichuan 7b
 
+    def __init__(self, config):
+        super().__init__(config, "ROPE")
+
+
+class Baichuan2ForCausalLM(BaiChuanBaseForCausalLM):  # baichuan2 13b
+
+    def __init__(self, config):
+        super().__init__(config, "ALIBI", "2")
+
+
+class BaiChuan2ForCausalLM(BaiChuanBaseForCausalLM):  # baichuan2 7b
+
     def __init__(self, config, quant_config=None):
-        super().__init__(config, "ROPE", quant_config)
+        super().__init__(config, "ROPE", quant_config, "2")
