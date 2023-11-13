@@ -73,6 +73,7 @@ class ChatCompletionRequest(BaseModel):
     stop_token_ids: Optional[List[int]] = Field(default_factory=list)
     skip_special_tokens: Optional[bool] = True
     spaces_between_special_tokens: Optional[bool] = True
+    lora_id: Optional[str] = None
 
 
 class CompletionRequest(BaseModel):
@@ -100,6 +101,7 @@ class CompletionRequest(BaseModel):
     stop_token_ids: Optional[List[int]] = Field(default_factory=list)
     skip_special_tokens: Optional[bool] = True
     spaces_between_special_tokens: Optional[bool] = True
+    lora_id: Optional[str] = None
 
 
 class LogProbs(BaseModel):
