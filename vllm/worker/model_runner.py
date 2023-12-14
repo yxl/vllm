@@ -73,6 +73,7 @@ class ModelRunner:
         input_positions: List[List[int]] = []
         slot_mapping: List[List[int]] = []
 
+        prompt_token_length = 1
         prompt_lens: List[int] = []
         for seq_group_metadata in seq_group_metadata_list:
             assert seq_group_metadata.is_prompt
@@ -84,6 +85,7 @@ class ModelRunner:
             prompt_tokens = seq_data.get_token_ids()
             prompt_len = len(prompt_tokens)
             prompt_lens.append(prompt_len)
+            prompt_token_length = seq_data.get_prompt_len()
 
             input_tokens.append(prompt_tokens)
             # NOTE(woosuk): Here we assume that the first token in the prompt
@@ -138,6 +140,7 @@ class ModelRunner:
             context_lens=None,
             block_tables=None,
             use_cuda_graph=False,
+            prompt_token_length=prompt_token_length,
         )
         return input_tokens, input_positions, input_metadata
 
@@ -152,6 +155,7 @@ class ModelRunner:
         context_lens: List[int] = []
         block_tables: List[List[int]] = []
 
+        prompt_token_length = 1
         for seq_group_metadata in seq_group_metadata_list:
             assert not seq_group_metadata.is_prompt
 
@@ -160,6 +164,12 @@ class ModelRunner:
                 seq_data = seq_group_metadata.seq_data[seq_id]
                 generation_token = seq_data.get_last_token_id()
                 input_tokens.append([generation_token])
+                prompt_token_length = seq_data.get_prompt_len()
+
+                context_len = seq_data.get_len()
+                if self.sliding_window is not None:
+                    context_len = min(context_len, self.sliding_window)
+                context_lens.append(context_len)
 
                 seq_len = seq_data.get_len()
                 position = seq_len - 1
@@ -245,6 +255,7 @@ class ModelRunner:
             context_lens=context_lens,
             block_tables=block_tables,
             use_cuda_graph=use_captured_graph,
+            prompt_token_length=prompt_token_length,
         )
         return input_tokens, input_positions, input_metadata
 

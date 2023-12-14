@@ -131,6 +131,9 @@ class ParallelLMHead(VocabParallelEmbedding):
                 "parallel_dim": 0,
                 "weight_loader": self.weight_loader
             })
+            # Always initialize bias to zero.
+            with torch.no_grad():
+                self.bias.zero_()
         else:
             self.register_parameter("bias", None)
 

@@ -33,6 +33,7 @@ from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
+import torch
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -144,6 +145,9 @@ async def check_length(
 
     if request.max_tokens is None:
         request.max_tokens = max_model_len - token_num
+    # hack for llama2
+    if token_num + request.max_tokens > max_model_len:
+        request.max_tokens = max(max_model_len - token_num, 1)
     if token_num + request.max_tokens > max_model_len:
         return input_ids, create_error_response(
             HTTPStatus.BAD_REQUEST,
@@ -162,6 +166,11 @@ async def health() -> Response:
     """Health check."""
     return Response(status_code=200)
 
+@app.get("/healthz")
+async def health_check():
+    """Health check"""
+    torch.zeros((2, 2)).cuda()
+    return "ok"
 
 @app.get("/v1/models")
 async def show_available_models():
@@ -208,6 +217,9 @@ def create_logprobs(
             } if step_top_logprobs else None)
     return logprobs
 
+def is_qwen(model_name: str):
+    lower_name = model_name.lower()
+    return 'qwen' in lower_name or 'lime' in lower_name
 
 @app.post("/v1/chat/completions")
 async def create_chat_completion(request: ChatCompletionRequest,
@@ -249,15 +261,20 @@ async def create_chat_completion(request: ChatCompletionRequest,
     chunk_object_type = "chat.completion.chunk"
     try:
         spaces_between_special_tokens = request.spaces_between_special_tokens
+        # hack for qwen
+        stop = request.stop
+        stop = [] if stop is None else stop if isinstance(stop, list) else [stop]
+        if is_qwen(model_name):
+            stop = list(set(stop + ["<|endoftext|>", "<|im_start|>", "<|im_end|>"]))
         sampling_params = SamplingParams(
             n=request.n,
             presence_penalty=request.presence_penalty,
             frequency_penalty=request.frequency_penalty,
             repetition_penalty=request.repetition_penalty,
-            temperature=request.temperature,
+            temperature=request.temperature if request.temperature else 0.01,
             top_p=request.top_p,
             min_p=request.min_p,
-            stop=request.stop,
+            stop=stop,
             stop_token_ids=request.stop_token_ids,
             max_tokens=request.max_tokens,
             best_of=request.best_of,
@@ -486,6 +503,8 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
     if use_token_ids:
         _, error_check_ret = await check_length(request, prompt_ids=prompt)
     else:
+        if is_qwen(model_name) and '<|im_start|>' not in prompt:
+            prompt = f'<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n'
         token_ids, error_check_ret = await check_length(request, prompt=prompt)
     if error_check_ret is not None:
         return error_check_ret
@@ -493,17 +512,22 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
     created_time = int(time.monotonic())
     try:
         spaces_between_special_tokens = request.spaces_between_special_tokens
+        # hack for qwen
+        stop = request.stop
+        stop = [] if stop is None else stop if isinstance(stop, list) else [stop]
+        if is_qwen(model_name):
+            stop = list(set(stop + ["<|endoftext|>", "<|im_start|>", "<|im_end|>"]))
         sampling_params = SamplingParams(
             n=request.n,
             best_of=request.best_of,
             presence_penalty=request.presence_penalty,
             frequency_penalty=request.frequency_penalty,
             repetition_penalty=request.repetition_penalty,
-            temperature=request.temperature,
+            temperature=request.temperature if request.temperature else 0.01,
             top_p=request.top_p,
             top_k=request.top_k,
             min_p=request.min_p,
-            stop=request.stop,
+            stop=stop,
             stop_token_ids=request.stop_token_ids,
             ignore_eos=request.ignore_eos,
             max_tokens=request.max_tokens
