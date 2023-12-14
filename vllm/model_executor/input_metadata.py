@@ -22,7 +22,9 @@ class InputMetadata:
         context_lens: Optional[torch.Tensor],
         block_tables: Optional[torch.Tensor],
         use_cuda_graph: bool,
+        prompt_token_length: int = 0,
     ) -> None:
+        self.prompt_token_length = prompt_token_length
         self.is_prompt = is_prompt
         self.max_context_len = max_context_len
         self.slot_mapping = slot_mapping
@@ -36,6 +38,7 @@ class InputMetadata:
 
     def __repr__(self) -> str:
         return ("InputMetadata("
+                f"prompt_token_length={self.prompt_token_length}, "
                 f"is_prompt={self.is_prompt}, "
                 f"max_context_len={self.max_context_len}, "
                 f"slot_mapping={self.slot_mapping}, "

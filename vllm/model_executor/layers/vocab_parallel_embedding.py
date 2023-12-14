@@ -124,7 +124,7 @@ class ParallelLMHead(VocabParallelEmbedding):
         super().__init__(num_embeddings, embedding_dim, params_dtype)
         if bias:
             self.bias = Parameter(
-                torch.empty(self.num_embeddings_per_partition,
+                torch.zeros(self.num_embeddings_per_partition,
                             device=torch.cuda.current_device(),
                             dtype=params_dtype))
             set_weight_attrs(self.bias, {
