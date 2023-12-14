@@ -115,6 +115,7 @@ class QWenAttention(nn.Module):
     ) -> torch.Tensor:
         qkv, _ = self.c_attn(hidden_states)
         q, k, v = qkv.chunk(chunks=3, dim=-1)
+        self.rotary_emb.update_cos_sin_cache(input_metadata.prompt_token_length or 1)
         q, k = self.rotary_emb(positions, q, k)
         k_cache, v_cache = kv_cache
         attn_output = self.attn(q, k, v, k_cache, v_cache, input_metadata)
@@ -135,9 +136,17 @@ class QWenBlock(nn.Module):
 
         rope_theta = getattr(config, "rope_theta", 10000)
         rope_scaling = getattr(config, "rope_scaling", None)
+        max_position_embeddings = config.max_position_embeddings
+        if config.use_dynamic_ntk and config.use_logn_attn:
+            seq_length = getattr(config, "seq_length", 2048)
+            rope_scaling = {
+                "type": "dynamic_log",
+                "factor": config.max_position_embeddings / seq_length,
+            }
+            max_position_embeddings = seq_length
         self.attn = QWenAttention(config.hidden_size,
                                   config.num_attention_heads,
-                                  config.max_position_embeddings,
+                                  max_position_embeddings,
                                   rope_theta=rope_theta,
                                   rope_scaling=rope_scaling,
                                   linear_method=linear_method)

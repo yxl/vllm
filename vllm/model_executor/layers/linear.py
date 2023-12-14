@@ -117,6 +117,9 @@ class ReplicatedLinear(torch.nn.Module):
                             device=torch.cuda.current_device(),
                             dtype=self.params_dtype))
             set_weight_attrs(self.bias, {"output_dim": 0})
+            # Always initialize bias to zero.
+            with torch.no_grad():
+                self.bias.zero_()
         else:
             self.register_parameter("bias", None)
 
@@ -189,6 +192,9 @@ class ColumnParallelLinear(torch.nn.Module):
                 "output_dim": 0,
                 "weight_loader": self.weight_loader,
             })
+            # Always initialize bias to zero.
+            with torch.no_grad():
+                self.bias.zero_()
         else:
             self.register_parameter("bias", None)
 
@@ -513,6 +519,9 @@ class RowParallelLinear(torch.nn.Module):
                 "output_dim": 0,
                 "weight_loader": self.weight_loader,
             })
+            # Always initialize bias to zero.
+            with torch.no_grad():
+                self.bias.zero_()
         else:
             self.register_parameter("bias", None)
 
