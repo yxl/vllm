@@ -53,6 +53,7 @@ class RotaryEmbedding(nn.Module):
         max_position_embeddings: int,
         base: int,
         is_neox_style: bool,
+        use_logn_attn: bool = True,
     ) -> None:
         super().__init__()
         self.head_size = head_size
@@ -60,6 +61,15 @@ class RotaryEmbedding(nn.Module):
         self.max_position_embeddings = max_position_embeddings
         self.base = base
         self.is_neox_style = is_neox_style
+        self.use_logn_attn = use_logn_attn
+
+        if self.use_logn_attn:
+            logn_list = [
+                math.log(i, self.max_position_embeddings) if i > self.max_position_embeddings else 1
+                for i in range(1, 32768)
+            ]
+            logn_tensor = torch.tensor(logn_list)[None, :, None]
+            self.register_buffer("logn_tensor", logn_tensor, persistent=False)
 
         cache = self._compute_cos_sin_cache()
         cache = cache.to(torch.get_default_dtype())
@@ -145,6 +155,11 @@ class RotaryEmbedding(nn.Module):
         # updates the query and key tensors.
         ops.rotary_embedding(positions, query, key, self.head_size,
                              self.cos_sin_cache, self.is_neox_style)
+        if self.use_logn_attn:
+            seq_start = key.size(1) - query.size(1)
+            seq_end = key.size(1)
+            logn_tensor = self.logn_tensor[:, seq_start:seq_end, :]
+            query = query * logn_tensor.expand_as(query)
         return query, key
 
 
