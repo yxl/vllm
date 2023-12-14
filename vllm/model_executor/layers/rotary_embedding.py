@@ -53,6 +53,8 @@ class RotaryEmbedding(nn.Module):
         max_position_embeddings: int,
         base: int,
         is_neox_style: bool,
+        register_cache: bool = True,
+        use_logn_attn: bool = False,
     ) -> None:
         super().__init__()
         self.head_size = head_size
@@ -60,6 +62,18 @@ class RotaryEmbedding(nn.Module):
         self.max_position_embeddings = max_position_embeddings
         self.base = base
         self.is_neox_style = is_neox_style
+        self.use_logn_attn = use_logn_attn
+
+        if self.use_logn_attn:
+            logn_list = [
+                math.log(i, self.max_position_embeddings) if i > self.max_position_embeddings else 1
+                for i in range(1, 32768)
+            ]
+            logn_tensor = torch.tensor(logn_list)[None, :, None]
+            self.register_buffer("logn_tensor", logn_tensor, persistent=False)
+
+        if not register_cache:
+            return
 
         cache = self._compute_cos_sin_cache()
         cache = cache.to(torch.get_default_dtype())
@@ -145,6 +159,11 @@ class RotaryEmbedding(nn.Module):
         # updates the query and key tensors.
         ops.rotary_embedding(positions, query, key, self.head_size,
                              self.cos_sin_cache, self.is_neox_style)
+        if self.use_logn_attn:
+            seq_start = key.size(1) - query.size(1)
+            seq_end = key.size(1)
+            logn_tensor = self.logn_tensor[:, seq_start:seq_end, :]
+            query = query * logn_tensor.expand_as(query)
         return query, key
 
 
@@ -222,6 +241,48 @@ class DynamicNTKScalingRotaryEmbedding(RotaryEmbedding):
         cache = torch.cat((cos, sin), dim=-1)
         return cache
 
+
+class DynamicNTKLogScalingRotaryEmbedding(RotaryEmbedding):
+    """RotaryEmbedding extended with Dynamic NTK scaling and dynamic logN scaling.
+    """
+
+    def __init__(
+        self,
+        head_size: int,
+        rotary_dim: int,
+        max_position_embeddings: int,
+        base: int,
+        is_neox_style: bool,
+        scaling_factor: float,
+    ) -> None:
+        self.scaling_factor = scaling_factor
+        self._num_prompt_tokens_cached = 0
+        self.dtype = torch.get_default_dtype()
+        super().__init__(head_size, rotary_dim, max_position_embeddings, base,
+                         is_neox_style, register_cache=False, use_logn_attn=True)
+
+    def update_cos_sin_cache(self, num_prompt_tokens: int) -> None:
+        max_len = self.max_position_embeddings * self.scaling_factor
+        if num_prompt_tokens == self._num_prompt_tokens_cached:
+            return
+        ntk_alpha = self.get_ntk_alpha(num_prompt_tokens)
+        base = self.base * ntk_alpha **(self.rotary_dim / (self.rotary_dim - 2))
+        inv_freq = self._compute_inv_freq(base)
+        t = torch.arange(max_len, dtype=torch.float, device="cuda")
+        freqs = torch.einsum("i,j -> ij", t, inv_freq)
+        cos = freqs.cos()
+        sin = freqs.sin()
+        cache = torch.cat((cos, sin), dim=-1)
+        cache = cache.to(self.dtype)
+        self.register_buffer("cos_sin_cache", cache, persistent=False)
+        self._num_prompt_tokens_cached = num_prompt_tokens
+
+    # Adapted from https://huggingface.co/Qwen/Qwen-14B-Chat/blob/main/modeling_qwen.py
+    def get_ntk_alpha(self, true_seq_len):
+        context_value = math.log(true_seq_len / self.max_position_embeddings, 2) + 1
+        ntk_alpha = 2 ** math.ceil(context_value) - 1
+        ntk_alpha = max(ntk_alpha, 1)
+        return ntk_alpha
 
 # Inverse dim formula to find dim based on number of rotations
 def _yarn_find_correction_dim(num_rotations: int,
@@ -355,6 +416,10 @@ def get_rope(
                                                       scaling_factor)
         elif scaling_type == "dynamic":
             rotary_emb = DynamicNTKScalingRotaryEmbedding(
+                head_size, rotary_dim, max_position, base, is_neox_style,
+                scaling_factor)
+        elif scaling_type == "dynamic_log":
+            rotary_emb = DynamicNTKLogScalingRotaryEmbedding(
                 head_size, rotary_dim, max_position, base, is_neox_style,
                 scaling_factor)
         elif scaling_type == "yarn":

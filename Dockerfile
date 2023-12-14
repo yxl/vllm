@@ -1,19 +1,26 @@
 FROM nvidia/cuda:12.1.0-devel-ubuntu22.04 AS dev
 
+# 设置为中国国内源
+RUN sed -i "s@\(archive\|security\).ubuntu.com@mirrors.aliyun.com@g" /etc/apt/sources.list
+RUN echo >>/etc/apt/apt.conf.d/99verify-peer.conf "Acquire { https::Verify-Peer false }"
+
 RUN apt-get update -y \
     && apt-get install -y python3-pip
 
 WORKDIR /workspace
 
+# pip 国内加速
+RUN pip config set global.index-url https://mirrors.tencentyun.com/pypi/simple
+
 # install build and runtime dependencies
 COPY requirements.txt requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements.txt
+    pip install -r requirements.txt --default-timeout=120
 
 # install development dependencies
 COPY requirements-dev.txt requirements-dev.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements-dev.txt
+    pip install -r requirements-dev.txt --default-timeout=120
 
 # image to build pytorch extensions
 FROM dev AS build
@@ -21,7 +28,7 @@ FROM dev AS build
 # install build dependencies
 COPY requirements-build.txt requirements-build.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements-build.txt
+    pip install -r requirements-build.txt --default-timeout=120
 
 # copy input files
 COPY csrc csrc
@@ -55,14 +62,21 @@ ENTRYPOINT ["python3", "-m", "pytest", "tests"]
 # use CUDA base as CUDA runtime dependencies are already installed via pip
 FROM nvidia/cuda:12.1.0-base-ubuntu22.04 AS vllm-base
 
+# 设置为中国国内源
+RUN sed -i "s@\(archive\|security\).ubuntu.com@mirrors.aliyun.com@g" /etc/apt/sources.list
+RUN echo >>/etc/apt/apt.conf.d/99verify-peer.conf "Acquire { https::Verify-Peer false }"
+
 # libnccl required for ray
 RUN apt-get update -y \
     && apt-get install -y python3-pip
 
+# pip 国内加速
+RUN pip config set global.index-url https://mirrors.tencentyun.com/pypi/simple
+
 WORKDIR /workspace
 COPY requirements.txt requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements.txt
+    pip install -r requirements.txt --default-timeout=120
 
 FROM vllm-base AS vllm
 COPY --from=build /workspace/vllm/*.so /workspace/vllm/
@@ -75,7 +89,7 @@ ENTRYPOINT ["python3", "-m", "vllm.entrypoints.api_server"]
 FROM vllm-base AS vllm-openai
 # install additional dependencies for openai api server
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install accelerate fschat
+    pip install accelerate fschat --default-timeout=120
 
 COPY --from=build /workspace/vllm/*.so /workspace/vllm/
 COPY vllm vllm

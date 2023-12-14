@@ -12,7 +12,7 @@ from vllm._C import cache_ops
 from vllm.model_executor.input_metadata import InputMetadata
 from vllm.utils import is_hip
 
-_SUPPORTED_HEAD_SIZES = [64, 80, 96, 112, 128, 256]
+_SUPPORTED_HEAD_SIZES = [64, 80, 96, 112, 128, 160, 256]
 # Should be the same as PARTITION_SIZE in `paged_attention_v2_launcher`.
 _PARTITION_SIZE = 512
 

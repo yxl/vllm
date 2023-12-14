@@ -21,7 +21,9 @@ class InputMetadata:
         max_context_len: Optional[int],
         context_lens: Optional[torch.Tensor],
         block_tables: Optional[torch.Tensor],
+        prompt_token_length: int = 0,
     ) -> None:
+        self.prompt_token_length = prompt_token_length
         self.prompt_lens = prompt_lens
         self.max_context_len = max_context_len
         self.slot_mapping = slot_mapping
@@ -35,6 +37,7 @@ class InputMetadata:
 
     def __repr__(self) -> str:
         return ("InputMetadata("
+                f"prompt_token_length={self.prompt_token_length}, "
                 f"prompt_lens={self.prompt_lens}, "
                 f"max_context_len={self.max_context_len}, "
                 f"slot_mapping={self.slot_mapping}, "
