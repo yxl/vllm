@@ -393,9 +393,14 @@ def _random_sample(
         if is_prompt:
             seq_ids, sampling_params = seq_group
             max_best_of = max(max_best_of, sampling_params.best_of)
-    random_samples = torch.multinomial(probs,
+    try:
+        random_samples = torch.multinomial(probs,
                                        num_samples=max_best_of,
                                        replacement=True).cpu()
+    except Exception as e:
+        print(e)
+        print(probs)
+        raise e
     sample_idx = 0
     results = []
     for seq_group, is_prompt in zip(selected_seq_groups, is_prompts):
