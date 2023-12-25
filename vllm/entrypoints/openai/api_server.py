@@ -627,17 +627,8 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
                     logprobs = None
                 previous_texts[i] = output.text
                 previous_num_tokens[i] = len(output.token_ids)
-                finish_reason = output.finish_reason
-                response_json = create_stream_response_json(
-                    index=i,
-                    text=delta_text,
-                    logprobs=logprobs,
-                    finish_reason=finish_reason,
-                )
-                yield f"data: {response_json}\n\n"
+                final_usage = None
                 if output.finish_reason is not None:
-                    logprobs = (LogProbs()
-                                if request.logprobs is not None else None)
                     prompt_tokens = len(res.prompt_token_ids)
                     completion_tokens = len(output.token_ids)
                     final_usage = UsageInfo(
@@ -645,14 +636,14 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
                         completion_tokens=completion_tokens,
                         total_tokens=prompt_tokens + completion_tokens,
                     )
-                    response_json = create_stream_response_json(
-                        index=i,
-                        text="",
-                        logprobs=logprobs,
-                        finish_reason=output.finish_reason,
-                        usage=final_usage,
-                    )
-                    yield f"data: {response_json}\n\n"
+                response_json = create_stream_response_json(
+                    index=i,
+                    text=delta_text,
+                    logprobs=logprobs,
+                    finish_reason=output.finish_reason,
+                    usage=final_usage,
+                )
+                yield f"data: {response_json}\n\n"
         yield "data: [DONE]\n\n"
 
     # Streaming response
